@@ -106,13 +106,12 @@ Calculator::SliceNextNode(
     const Node& prevnode
 ) const
 {
-    auto resultnode = std::make_unique<Node>(); //NodeStatus::NotRecognzd }
+    auto resultnode = std::make_unique<Node>(); 
 
-    //int hypolen = -1;  //"стартовая длина" найденного Node вначале пооиска
-    int pos = -1;  //перемення куда будет записываться макс знач длины строки
+    int pos = -1;  // макс знач длины строки
     int ntidx = 0;  //Nodetypes arrary index
     while (ntidx < nodetypes.size()) {
-        
+        //берем подстроку с конца предыдущего распознанного токена
         pos = nodetypes[ntidx]->DoIRecognizeSelf(str, prevnode.endpos);
         if (pos != -1) {
             //узeл  опознан //node type is recognized
@@ -121,30 +120,30 @@ Calculator::SliceNextNode(
             resultnode->endpos = pos;
             resultnode->strvalue = str.substr(resultnode->startpos, pos - resultnode->startpos);
             resultnode->nodetype = nodetypes[ntidx].get();
-            //не первый нод в строке
+            //если это не первый нод в строке
             if (prevnode.nodetype) {
                 //если опознанному node type разрешено следовать за предыдущим то ОК    
                 if (prevnode.nodetype->CanBeFollowedBy(nodetypes[ntidx]->getName()))
-                    resultnode->nodestatus = NodeStatus::OK;
+                    resultnode->nodestatus = ParseStatus::OK;
                 else
                     //если нет то все
-                    resultnode->nodestatus = NodeStatus::NoFollow;
+                    resultnode->nodestatus = ParseStatus::NoFollow;
             }
             else {
                 //если это первый нод в строке 
                 if (nodetypes[ntidx]->CanStartExpr())
                     //... и может начинать строку
-                    resultnode->nodestatus = NodeStatus::OK;
+                    resultnode->nodestatus = ParseStatus::OK;
                 else
                     //если нет то все
-                    resultnode->nodestatus = NodeStatus::NoStartWith;
+                    resultnode->nodestatus = ParseStatus::NoStartWith;
             }
             //break;
         }
-        if (resultnode->nodestatus == NodeStatus::OK) break;
+        if (resultnode->nodestatus == ParseStatus::OK) break;
         ++ntidx;  //к следующему nodetype
     }
-    if (resultnode->nodestatus == NodeStatus::NoRecognize)  //если  ==OK то все уже заполнено
+    if (resultnode->nodestatus == ParseStatus::NoRecognize)  //если  ==OK то все уже заполнено
     {
         resultnode->startpos = prevnode.endpos;
         resultnode->endpos = pos;
@@ -177,27 +176,27 @@ void Calculator::ToReversePolishNotation(std::string& str)
     //параметры текущего Node
     auto node = std::unique_ptr<Node>();
     
-    while (prevnode.endpos<str.length())
+    while (prevnode.endpos < str.length())
     {
        //опознать следующий кусок строки
         node = SliceNextNode(str, prevnode);
         //если не опознано то ошибка
         switch (node->nodestatus) {
-        case NodeStatus::NoRecognize :
+        case ParseStatus::NoRecognize :
             throw std::runtime_error(
                 "Parsing error: unknown symbols starting with " + 
-                node->strvalue  + ".");
+                node->strvalue  + "...");
             break;
-        case NodeStatus::NoFollow :
+        case ParseStatus::NoFollow :
             //foundstr = str.substr(0, nextpos);
             throw std::runtime_error("Parsing error: " + prevnode.strvalue +
                 " can't be followed by " + node->strvalue + ".");
             break;
-        case NodeStatus::NoStartWith :
+        case ParseStatus::NoStartWith :
             throw std::runtime_error("Parsing error: expression can't start with " + 
                    node->strvalue + ".");
             break;
-        case NodeStatus::OK :
+        case ParseStatus::OK :
             break;
         }
 
@@ -206,16 +205,16 @@ void Calculator::ToReversePolishNotation(std::string& str)
         //В зависимости от ТИПА КИДА разные сценарии
         switch (nodetype->getName()) {
 
-        case ParserName::Number:
+        case ParsedElem::Number:
             vec.emplace_back(std::move(node));
             break;
-        case ParserName::UnaryOperation:
+        case ParsedElem::UnaryOperation:
             stack.push(std::move(node));
             break;
-        case ParserName::BinaryOperation:
+        case ParsedElem::BinaryOperation:
             while (!stack.empty() && 
-                   (stack.top()->nodetype->getName() == ParserName::BinaryOperation ||
-                    stack.top()->nodetype->getName() == ParserName::UnaryOperation))
+                   (stack.top()->nodetype->getName() == ParsedElem::BinaryOperation ||
+                    stack.top()->nodetype->getName() == ParsedElem::UnaryOperation))
             {
                 if (stack.top()->nodetype->getPriority() >= 
                     (nodetype->getPriority())
@@ -229,16 +228,16 @@ void Calculator::ToReversePolishNotation(std::string& str)
             stack.push(std::move(node));
             break;
             //открыввающая скобка
-        case ParserName::CompoundStart:
+        case ParsedElem::CompoundStart:
             stack.push(std::move(node));
             break;
             //закрыввающая скобка
-        case ParserName::CompoundEnd: {
+        case ParsedElem::CompoundEnd: {
             int counter = 1;
             while ((!stack.empty() && 
-                   (stack.top()->nodetype->getName() != ParserName::CompoundStart)))
+                   (stack.top()->nodetype->getName() != ParsedElem::CompoundStart)))
             {
-                if (stack.top()->nodetype->getName() == ParserName::OperandDelimiter) {
+                if (stack.top()->nodetype->getName() == ParsedElem::OperandDelimiter) {
                     counter++;
                 }
                 else { 
@@ -258,12 +257,12 @@ void Calculator::ToReversePolishNotation(std::string& str)
             }
             break;
         }
-        case ParserName::OperandDelimiter:
+        case ParsedElem::OperandDelimiter:
             //если предыдущий аргумент Compounda сложный то перед тем как положить делимитер в стек нужно
             //вытащить в vector все операции относящиеся к предыд аргументу
             while (!stack.empty() && 
-                  (stack.top()->nodetype->getName() == ParserName::BinaryOperation ||
-                  (stack.top()->nodetype->getName() == ParserName::UnaryOperation))
+                  (stack.top()->nodetype->getName() == ParsedElem::BinaryOperation ||
+                  (stack.top()->nodetype->getName() == ParsedElem::UnaryOperation))
                 )
             {
                 TopStackToVec();
@@ -283,7 +282,7 @@ void Calculator::ToReversePolishNotation(std::string& str)
     }
     //записать оставшееся в стеке в вектор
     while (!stack.empty()) {
-        if (stack.top()->nodetype->getName() == ParserName::CompoundStart) {
+        if (stack.top()->nodetype->getName() == ParsedElem::CompoundStart) {
             // && !stack.top()->args) {
             throw std::runtime_error("Parsing error: missed close bracket.");
         }
@@ -297,7 +296,8 @@ OperandType Calculator::Execute()
 {
     std::stack<OperandType> stack;
     OperandType result{};
-    OperandType operands[MaxOperandCount];
+    //OperandType operands[MaxOperandCount];
+    vector<OperandType> operands{};
 
     std::size_t v = 0;
     while (v < vec.size())
@@ -307,17 +307,17 @@ OperandType Calculator::Execute()
         switch (vec[v]->nodetype->getName())
         {
 
-        case ParserName::Number:
+        case ParsedElem::Number:
             //посчитать число (из строки в OperandType) и положить его в стек
-            result = nodetype->Exec(nullptr, 1, vec[v]->strvalue);
+            result = nodetype->Exec(operands, vec[v]->strvalue);
             CheckResult(result);
             stack.push(result);
             break;
 
-        case ParserName::UnaryOperation:
+        case ParsedElem::UnaryOperation:
             if (stack.size() >= 1) {
-                operands[0] = stack.top(); stack.pop();
-                result = nodetype->Exec(operands, 1, "");
+                operands.push_back(stack.top()); stack.pop();
+                result = nodetype->Exec(operands, "");
                 CheckResult(result);
                 stack.push(result);
             }
@@ -325,11 +325,14 @@ OperandType Calculator::Execute()
                 throw std::runtime_error("Parsing error: must be 1 opnd for unary operation.");
             }
             break;
-        case ParserName::BinaryOperation:
+        case ParsedElem::BinaryOperation:
             if (stack.size() >= 2) {
-                operands[1] = stack.top(); stack.pop();
-                operands[0] = stack.top(); stack.pop();
-                result = nodetype->Exec(operands, 2, "");
+                //operands[1] = stack.top(); stack.pop();
+                //operands[0] = stack.top(); stack.pop();
+                operands.push_back(stack.top()); stack.pop();
+                operands.push_back(stack.top()); stack.pop();
+                std::reverse(operands.begin(), operands.end());
+                result = nodetype->Exec(operands, "");
                 CheckResult(result);
                 stack.push(result);
             }
@@ -338,7 +341,7 @@ OperandType Calculator::Execute()
             }
             break;
 
-        case ParserName::CompoundStart: {
+        case ParsedElem::CompoundStart: {
             //проверить совпадает ли кол-во операндов необходимое Compound и тому что записано
             //int i = dynamic_cast<CompoundStart*>(nodetype)->getOperNeed();
             OperNeed opneed = nodetype->getOperNeed();
@@ -347,14 +350,15 @@ OperandType Calculator::Execute()
             //выбраь операнды из стека
             auto j = static_cast<int>(vec[v]->args) - 1;
             while (j >= 0 && !stack.empty() && j < MaxOperandCount) {
-                operands[j] = stack.top();
+                operands.push_back(stack.top());
                 stack.pop();
                 --j;
             }
+            std::reverse(operands.begin(), operands.end());
             if (stack.empty() && j != -1)
                 throw std::runtime_error("Parsing error: Not enough operands.");
             //посчитать Результат Compounda и положить его в стек
-            result = nodetype->Exec(operands, vec[v]->args, "");
+            result = nodetype->Exec(operands, "");
             CheckResult(result);
             stack.push(result);
             break;

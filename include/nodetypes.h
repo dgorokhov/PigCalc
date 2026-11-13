@@ -1,17 +1,75 @@
 #pragma once
 
+
+#include <iostream>
 #include <algorithm>
 #include <cmath>
+#include <vector>
+#include <string>
+#include <string_view>
+#include <stdexcept>
+
+#include "calculator.h"
+
+
+using std::string;
+using std::vector;
 
 using OperandType = long double;
+constexpr OperandType MaxNumber = std::numeric_limits<long double>::max()/10;
+constexpr OperandType MinNumber = std::numeric_limits<long double>::min()*10;
 
 constexpr int MaxOperandCount = 50;
-constexpr OperandType TooSmallNumber = 10E-20;
+
+
+//сколько операндов нужно для узла расчета
+// -1 нисколько
+// 0  сколько угодно
+// N  N
+using OperNeed = int;
+
+
+class CalcValidate {
+public:
+
+        static OperandType Uncertainty(double value) {
+        // 1. Проверка на неопределенность (0/0, sqrt(-1), inf - inf)
+        if (std::isnan(value)) {
+            throw std::domain_error("Uncertainty error. Result is NaN.)");
+        }
+
+        // 2. Проверка на переполнение (выход в бесконечность или превышение разумного порога)
+        if (std::isinf(value) || std::abs(value) > MaxNumber) {
+            throw std::overflow_error("Overflow error. Result is too big/small.");
+        }
+
+        // 3. Проверка на underflow (потеря точности в денормализованной зоне)
+        if (value != 0.0 && std::fpclassify(value) == FP_SUBNORMAL) {
+            throw std::underflow_error("Underflow error. Result is too close to zero.");
+        }
+
+        return value;
+    }
+
+    // Вспомогательная проверка делителя (для /, %, cot и т.д.)
+    static void Divisor(OperandType divisor) {
+        if (std::abs(divisor) < MinNumber) {
+            throw std::overflow_error("Divisor is too small.");
+        }
+    }
+
+    // static void ifHas2Opers(const vector<OperandType>& opers) {
+    //     if (opers.size() != 2) throw std::runtime_error("Wrong number of arguments.");
+    // }
+    // static void ifHas1Oper(const vector<OperandType>& opers) {
+    //     if (opers.size() != 1) throw std::runtime_error("Wrong number of arguments.");
+    // }
+};
 
 
 //тип узла присваемый 
 //узлу расчета парсером калькулятора
-enum class ParserName {
+enum class ParsedElem {
     Unknown,
     NodeType,
     OperandDelimiter,
@@ -30,22 +88,15 @@ enum class Priority {
     High
 };
 
-//Статус узла расчета
-enum class NodeStatus
+//Резуьтат парсинга
+enum class ParseStatus
 {
     NoRecognize,      //узел не распознан. строка R123 не является ничем имеющим смысл для калькулятора
     NoStartWith,      //распознан, не может начинать строку
-    NoFollow,         //распознан, не може следоват за предыдущим
+    NoFollow,         //распознан, но не может следоват за предыдущим
     OK                //все в порядке
 };
-//сколько операндов нужно для узла расчета
-// -1 нисколько
-// 0  сколько угодно
-// 1  один
-// 2  два 
-// ...
-// N  N
-using OperNeed = int;
+
 
 //абстрактрый класс для всех узлов расчета
 //что это смотрите в Calculator.h
@@ -55,7 +106,7 @@ protected:
  
     //типы узлов которые могут следовать за этим узлом
     //см пример класса Number
-    std::vector<ParserName> _followed_by;
+    std::vector<ParsedElem> _followed_by;
     std::string _symbol_set{};
     //краткая запись узла расчета (испольщуется в help)
     std::string _about{};
@@ -94,10 +145,10 @@ public:
     }
     const Priority getPriority() const { return _priority; };
     const bool CanStartExpr() const { return _canstartexpr; }
-    virtual ParserName getName() const { return ParserName::NodeType; };
-    virtual bool CanBeFollowedBy(ParserName name) const 
+    virtual ParsedElem getName() const { return ParsedElem::NodeType; };
+    virtual bool CanBeFollowedBy(ParsedElem name) const 
     {
-        for (auto& i : _followed_by)
+        for (const auto& i : _followed_by)
         {
             if (i == name) return true;
         }
@@ -120,7 +171,7 @@ public:
         case 0:
             while (i < str.size()) {
                 if (_symbol_set.find(str.at(i)) == std::string::npos)  break;
-                i++;
+                ++i;
             };
             if (i == startpos)
                 return -1;
@@ -147,11 +198,9 @@ public:
         str - строка (только для простых типов (Number) непосредственно преобразуемых в число)
         Т.к.параметры передаются по значению, const для параметров не нужен
     */
-    virtual OperandType Exec (
-        OperandType operands[], 
-        int operand_count, 
-        std::string str) const 
-    { return 0.0; };
+    virtual OperandType Exec (vector<OperandType>& operands, const std::string str) const { 
+        return 0.0; 
+    };
 
    
 };
@@ -164,7 +213,7 @@ struct Node
 {
     std::string strvalue{};
     NodeType* nodetype{ nullptr };      // не владееет ресурсом  
-    NodeStatus nodestatus{ NodeStatus::NoRecognize };
+    ParseStatus nodestatus{ ParseStatus::NoRecognize };
     int args{ 0 };          // кол-во аргументов (заполняется при вычислении Обратной польской нотации)
     int startpos{ 0 };      
     int endpos{ 0 };
@@ -182,7 +231,7 @@ struct Node
     { }
     /*std::string getStrvalue() const { return _strvalue; };
     NodeType* getNodetype() const { return _nodetype; };
-    ParserName getNodetypeName() const { return _nodetype->getName(); };
+    ParsedElem getNodetypeName() const { return _nodetype->getName(); };
     Priority getPriority() const { return _nodetype->getPriority(); };*/
 };
 
@@ -195,34 +244,37 @@ public:
     // это уузел рассчета ЧИСЛО (number) которое мож.быть записано 
     //любым кол-вом символов (второй параметр конструктора ==0) 
     //из набора символов ".0123456789"
-    Number() : NodeType(".0123456789eE", 0)
+    Number() : NodeType(".0123456789", 0)
     {
         _priority = Priority::Undefined;
         //после узла Number может следовать :
         _followed_by = { 
-            ParserName::BinaryOperation, //бинарная операция
-            ParserName::OperandDelimiter,//разделитель операндов
-            ParserName::CompoundEnd // закрывающая скобка
+            ParsedElem::BinaryOperation, //бинарная операция
+            ParsedElem::OperandDelimiter,//разделитель операндов
+            ParsedElem::CompoundEnd // закрывающая скобка
         };
     };
-    //класс number относится к категории чисел "return ParserName::Number;"
+    //класс number относится к категории чисел "return ParsedElem::Number;"
     //(эту инфор-ю использует парсер калькулятора
-    ParserName getName() const override { return ParserName::Number; };
+    ParsedElem getName() const override { return ParsedElem::Number; };
     //чтобы преобразовать строку содержащую number нужно
     // просто вызвать стандартную функцию преобр-я stof. Stof не получит
     // неправильыне данные т.к. вся подстрока м. содержать символы из набора ".0123456789"
-    OperandType Exec(OperandType operands[], int operand_count, std::string str) const override
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override
     {
         OperandType result{};
         try {
             // Перевод строки в long double
             result = std::stold(str);
+//            CalcValidate::Uncertainty(result);
+ //           CalcValidate::Divisor(result);
+
         }
         catch (const std::invalid_argument& e) {
             // Строка вообще не является числом (например, "abc")
-            throw std::runtime_error("Wrong number: " + 
+            throw std::runtime_error("Not a number error: " + 
                     (str.substr(0,3) + "...").substr(0,5));
-        }
+        }   
         catch (const std::out_of_range& e) {
             throw std::runtime_error("Number is out of range: " + str.substr(0, 4) + "...");
         }
@@ -237,15 +289,15 @@ public:
     {
         _priority = Priority::Undefined;
         _followed_by = { 
-            ParserName::BinaryOperation, 
-            ParserName::OperandDelimiter, 
-            ParserName::CompoundEnd 
+            ParsedElem::BinaryOperation, 
+            ParsedElem::OperandDelimiter, 
+            ParsedElem::CompoundEnd 
         };
 
         _about = "0b101110";
         _usecase = "Binary number, without fraction part";
     };
-    ParserName getName() const override { return ParserName::Number; };
+    ParsedElem getName() const override { return ParsedElem::Number; };
     int DoIRecognizeSelf(const std::string& str, int  startpos) const override
     {
         auto i = startpos;
@@ -262,7 +314,7 @@ public:
         else return -1;
     }
 
-    OperandType Exec(OperandType operands[], int operand_count, std::string str) const override
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override
     {
         //из строки 0b0111011101 в OperandType
         int i = static_cast<int>(str.length() - 1);
@@ -280,12 +332,12 @@ public:
     HexNumber() : NodeType("0123456789ABCDEF", 0)
     {
         _priority = Priority::Undefined;
-        _followed_by = { ParserName::BinaryOperation, ParserName::OperandDelimiter, ParserName::CompoundEnd };
+        _followed_by = { ParsedElem::BinaryOperation, ParsedElem::OperandDelimiter, ParsedElem::CompoundEnd };
 
         _about = "0x1AF233C";
         _usecase = "Hex number, without fraction part";
     };
-    ParserName getName() const override { return ParserName::Number; };
+    ParsedElem getName() const override { return ParsedElem::Number; };
     int DoIRecognizeSelf(const std::string& str, int  startpos) const override
     {
         auto i = startpos;
@@ -302,7 +354,7 @@ public:
         else return -1;
     }
 
-    OperandType Exec(OperandType operands[], int operand_count, std::string str) const override
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override
     {
         //из строки 0x в OperandType
         int i = static_cast<int>(str.length() - 1);
@@ -324,17 +376,17 @@ class Constant: public NodeType
 public:
     Constant(std::string symbols) : NodeType(symbols, 0)
     {   _priority=Priority::Undefined;
-        _followed_by = { ParserName::BinaryOperation, ParserName::OperandDelimiter, ParserName::CompoundEnd };
+        _followed_by = { ParsedElem::BinaryOperation, ParsedElem::OperandDelimiter, ParsedElem::CompoundEnd };
     };
-    ParserName getName()  const override { return ParserName::Number; };
-    int DoIRecognizeSelf(const std::string& str, int startpos)  const override
+    ParsedElem getName()  const override { return ParsedElem::Number; };
+    int DoIRecognizeSelf(const std::string& str, const int startpos)  const override
     {
         if (str.find(_symbol_set, startpos) == startpos)
             return static_cast<int>(_symbol_set.length()+startpos);  //ww _symbol_set.length()-1
         else
             return -1;
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str) const override { return 0.0;}
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override { return 0.0;}
 };
 
 class BinaryOperation : public NodeType {
@@ -343,10 +395,10 @@ public:
     {
         _priority=priority;
         _symbol_set=sign;
-        _followed_by = { ParserName::Number,ParserName::CompoundStart };
+        _followed_by = { ParsedElem::Number,ParsedElem::CompoundStart };
         _canstartexpr = false;
     }
-    ParserName getName() const override { return ParserName::BinaryOperation; } ;
+    ParsedElem getName() const override { return ParsedElem::BinaryOperation; } ;
 };
 
 class UnaryOperation : public NodeType {
@@ -355,14 +407,14 @@ public:
     {
         this->_priority=priority;
         _followed_by = {
-            ParserName::Number,
-            ParserName::CompoundStart,
-            ParserName::CompoundEnd,
-            ParserName::BinaryOperation,
-            ParserName::UnaryOperation };
+            ParsedElem::Number,
+            ParsedElem::CompoundStart,
+            ParsedElem::CompoundEnd,
+            ParsedElem::BinaryOperation,
+            ParsedElem::UnaryOperation };
         _canstartexpr = true;
     };
-    ParserName getName()  const override { return ParserName::UnaryOperation; } ;
+    ParsedElem getName()  const override { return ParsedElem::UnaryOperation; } ;
 };
 
 
@@ -379,17 +431,17 @@ public:
         _priority = Priority::High;
         _symbol_set = symbolset;
         _followed_by = {
-                ParserName::UnaryOperation,
-                ParserName::Number,
-                ParserName::CompoundStart };
+                ParsedElem::UnaryOperation,
+                ParsedElem::Number,
+                ParsedElem::CompoundStart };
     };
     
-    ParserName getName()  const override { return ParserName::CompoundStart; } ;
-    OperandType Exec(OperandType operands[], int operand_count, std::string str) const override {
-        return operands[0];
+    ParsedElem getName()  const override { return ParsedElem::CompoundStart; } ;
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override {
+        return operands.at(0);
     };
 
-    int DoIRecognizeSelf(const std::string& str, int  startpos) const override
+    int DoIRecognizeSelf(const std::string& str, const int startpos) const override
     {
         //если признак начала Compoundа стоит вначале
         if (str.find(_symbol_set, startpos) == startpos)
@@ -407,18 +459,18 @@ public:
     {
         _priority = Priority::High;
         _followed_by = {
-            ParserName::UnaryOperation,
-            ParserName::BinaryOperation,
-            ParserName::CompoundEnd,
-            ParserName::OperandDelimiter
+            ParsedElem::UnaryOperation,
+            ParsedElem::BinaryOperation,
+            ParsedElem::CompoundEnd,
+            ParsedElem::OperandDelimiter
         
         };
         _canstartexpr = false;
     };
-    ParserName getName()  const override { return ParserName::CompoundEnd; } ;
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    ParsedElem getName()  const override { return ParsedElem::CompoundEnd; } ;
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        return operands[0];
+        return operands.at(0);
     };
     int DoIRecognizeSelf(const std::string& str, int  startpos) const override
     {
@@ -436,17 +488,14 @@ class OperandDelimiter : public NodeType
 public:
     OperandDelimiter(std::string symbolset) : NodeType(symbolset, 1) {
         _followed_by = {
-            ParserName::Number,
-            ParserName::CompoundStart,
-            ParserName::UnaryOperation,
+            ParsedElem::Number,
+            ParsedElem::CompoundStart,
+            ParsedElem::UnaryOperation,
         };
         _canstartexpr = false;
     };
-    ParserName getName()  const override { return ParserName::OperandDelimiter; }
+    ParsedElem getName()  const override { return ParsedElem::OperandDelimiter; }
 };
-
-
-
 
     /*
      * Классы операций (унарных и бинарных и функции)
@@ -470,21 +519,21 @@ public:
     UnaryMinus() : UnaryOperation ("-",Priority::Low) //....низкий?
     {
         _followed_by = {
-        ParserName::Number,
-        ParserName::CompoundStart,
-        ParserName::UnaryOperation
+        ParsedElem::Number,
+        ParsedElem::CompoundStart,
+        ParsedElem::UnaryOperation
         };
     };
-    OperandType Exec(OperandType operands[], int operand_count, std::string str) const override {
-        return ( - operands[0]);
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override {
+        return ( - operands.at(0));
     };
 };
 
 class Addition: public BinaryOperation {
 public:
     Addition() : BinaryOperation ("+",Priority::Low) {};
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override {
-        OperandType op2 = operands[0] + *(operands + 1);
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override {
+        OperandType op2 = operands.at(0) + operands.at(1);
         return ( op2 );
     };
 };
@@ -492,9 +541,9 @@ public:
 class Substraction: public BinaryOperation {
 public:
     Substraction() : BinaryOperation("-", Priority::Low) {};
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        OperandType op2= operands[0] - (*(operands+1));
+        OperandType op2= operands.at(0) - (operands.at(1));
         return ( op2 );
     };
 };
@@ -503,9 +552,9 @@ public:
 class Multiplication: public BinaryOperation {
 public:
     Multiplication() : BinaryOperation ("*",Priority::Middle) {};
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        OperandType op2 = operands[0] * (*(operands + 1));
+        OperandType op2 = operands.at(0) * (operands.at(1));
         return ( op2 );
     };
 };
@@ -513,11 +562,11 @@ public:
 class Division: public BinaryOperation {
 public:
     Division() : BinaryOperation ("/",Priority::Middle) {};
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        if (abs(*(operands+1)) < TooSmallNumber)
+        if (std::abs(operands.at(1)) < MinNumber)
             throw std::runtime_error ("Division: divider is zero or too small.");
-        return  operands[0] / (*(operands+1));
+        return  operands.at(0) / (operands.at(1));
     };
 };
 
@@ -540,10 +589,10 @@ public:
     _usecase = "Factorial of X";
 };
      
-     OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
      {
          OperandType result = 1;
-         for (int i = 1; i <= round(operands[0]); i++) {
+         for (int i = 1; i <= round(operands.at(0)); ++i) {
              result *= i;
          }
          return result;
@@ -557,9 +606,9 @@ public:
         _about = "abs(X)"; 
         _usecase = "Absolule value of X";
     };
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        return abs(*(operands));
+        return std::abs(operands.at(0));
     };
 };
 
@@ -570,9 +619,9 @@ public:
         _about = "trunc(X)"; 
         _usecase = "Eliminates fractional part of X";
     };
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        return trunc(*(operands));
+        return std::trunc(operands.at(0));
     };
 };
 
@@ -583,9 +632,9 @@ public:
         _about = "round(X)"; 
         _usecase = "Rounds X to nearest integer number";
     };
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        return trunc(*(operands));
+        return std::round(operands.at(0));
     };
 };
 
@@ -596,9 +645,9 @@ public:
         _about = "pow(X, Y)";
         _usecase = "Pow(X, Y). Ex: pow(2, 3) = 8";
     };
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override
     {
-        OperandType op2 = pow(operands[0], *(operands + 1));
+        OperandType op2 = pow(operands.at(0), operands.at( + 1));
         return (op2);
     };
 };
@@ -610,9 +659,9 @@ public:
         _about = "pi";
         _usecase = "Pi = 3.14159265358979...";
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        return 3.14159265358979323846264338327;
+        return std::numbers::pi;
     }
 };
 
@@ -624,9 +673,9 @@ public:
         _about = "sin(X)";
         _usecase = "Sines of X";
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        return sin(*(operands));
+        return sin(operands.at(0));
     };
 };
 
@@ -638,9 +687,9 @@ public:
         _usecase = "Cosines of X";
     };
 
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override
     {
-        return cos(*(operands));
+        return cos(operands.at(0));
     };
 };
 
@@ -651,13 +700,13 @@ public:
         _about = "tan(X)";
         _usecase = "Tangents of X";
     };
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        OperandType csn = cos(*operands);
-        if ( abs(csn) < TooSmallNumber )
+        OperandType csn = cos(operands.at(0));
+        if ( std::abs(csn) < MinNumber )
             throw std::runtime_error("Tangents: function is not defined for this angle.");
         else
-            return tan(*(operands));
+            return std::tan(operands.at(0));
     };
 };
 
@@ -669,12 +718,12 @@ public:
         _about = "cotan(X)";
         _usecase = "Cotangents of X";
     };
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override {
-        OperandType ssn = sin(*operands);
-        if ( abs(ssn) < TooSmallNumber )
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override {
+        OperandType ssn = sin(operands.at(0));
+        if ( std::abs(ssn) < MinNumber )
             throw std::runtime_error("Cotangents: function is not defined for this angle.");
         else
-            return cos(*(operands))/ssn;
+            return std::cos(operands.at(0))/ssn;
     };
 };
 
@@ -688,9 +737,9 @@ public:
         _about = "exp";
         _usecase = "Exponent = 2.71828182845904523536...";
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override
     {
-        return 2.71828182845904523536028747135266249;
+        return std::numbers::e;
     }
 };
 
@@ -702,12 +751,12 @@ public:
         _about = "ln(X)";
         _usecase = "Natural logarithm of X (exponent is the base)";
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        if ( (*operands) < 0 )
-            throw std::runtime_error("Logarithm: function is not defined for negatives.");
+        if ( (operands.at(0)) <= 0 )
+            throw std::runtime_error("Logarithm: function is not defined for negatives and very small numbers.");
         else
-            return log(*operands);
+            return std::log(operands.at(0));
     };
 };
 
@@ -718,14 +767,14 @@ public:
         _about = "log(X; base)";
         _usecase = "Logarithm of X. Ex: log(8, 2) = 3";
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        if ( (*operands) < 0 )
-            throw std::runtime_error("Logarithm: function is not defined for negatives.");
+        if ( (operands.at(0)) <= 0 )
+            throw std::runtime_error("Logarithm: function is not defined for negatives and very small numbers.");
         else {
-            OperandType znam = log(*(operands+1));
-            if (znam > TooSmallNumber)
-                return log(*operands)/znam;
+            OperandType znam = log(operands.at(1));
+            if (znam > MinNumber)
+                return std::log(operands.at(0))/znam;
             else
                 throw std::runtime_error("Logarithm: function is not defined for this value.");
         }
@@ -737,14 +786,14 @@ public:
     Log10() : CompoundStart("lg(", 1) 
     {
         _about = "lg(X)";
-        _usecase = "Binary logarithm of X (2 is the base). Ex: lg(8) = 3";
+        _usecase = "Decimal logarithm of X. Ex: lg(100) = 2";
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        if ((*operands) < 0)
+        if ((operands.at(0)) <= 0)
             throw std::runtime_error("Logarithm: function is not defined for negatives.");
         else {
-            return log(*operands) / log(2);
+            return std::log(operands.at(0)) / log(10);
         }
     };
 };
@@ -757,12 +806,11 @@ public:
         _about = "min(X1; X2;...Xn)";
         _usecase = "Minimum of any given numbers";
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        int i = 0;
-        OperandType min = *(operands + i);
-        for (i = 1; i < operand_count; i++) {
-            if (*(operands + i) < min) min = (*(operands + i));
+        OperandType min = operands.at(0);
+        for (size_t i = 1; i < operands.size(); ++i) {
+            min = (operands.at(i) < min) ? operands.at(i) : min;
         }
         return min;
     };
@@ -776,11 +824,11 @@ public:
         _usecase = "Maximum of any given numbers";
     }
 
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        OperandType max = *(operands);
-        for (int i = 1; i < operand_count; i++) {
-            if (*(operands + i) > max) max = (*(operands + i));
+        OperandType max = operands.at(0);
+        for (size_t i = 1; i < operands.size(); ++i) {
+            max = (operands.at(i) > max) ? operands.at(i) : max;
         }
         return max;
     };
@@ -788,18 +836,18 @@ public:
 
 class ArithmeticMean: public CompoundStart {
 public:
-    ArithmeticMean() : CompoundStart  ("arithmean(",0)
+    ArithmeticMean() : CompoundStart("arithmean(",0) 
     {
         _about = "arithmean(X1; X2;...Xn)";
         _usecase = "Arithmetic mean of given numbers";
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
         OperandType sum = 0;
-        for ( int i=0; i<operand_count; i++) {
-            sum += *(operands+i);
+        for (size_t i = 0; i < operands.size(); ++i) {
+            sum += operands.at(i);
         }
-        return sum /= operand_count;
+        return sum /= operands.size();
    };
 };
 
@@ -810,13 +858,13 @@ public:
         _about = "geomean(X1; X2;...Xn)";
         _usecase = "Geometric mean of given numbers";
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        OperandType res = 0;
-        for (int i = 0; i < operand_count; i++) {
-            res *= *(operands + i);
+        OperandType res = 1.0;
+        for (size_t i = 0; i < operands.size(); ++i) {
+            res *= operands.at(i);
         }
-        return pow(res,1/operand_count);
+        return pow(res, 1.0/operands.size());
     };
 };
 
@@ -828,13 +876,13 @@ public:
         _about = "harmean(X1; X2;...Xn)";
         _usecase = "Harmonic mean of given numbers";
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
         OperandType res = 0;
-        for (int i = 0; i < operand_count; ++i) {
-            res += 1 / (*(operands + i));
+        for (size_t i = 0; i < operands.size(); ++i) {
+            res += 1 / operands.at(i);
         }
-        return operand_count / res;
+        return operands.size() / res;
     };
 };
 
@@ -845,13 +893,12 @@ public:
         _about = "median(X1; X2;...Xn)";
         _usecase = "Median of given numbers";
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        std::vector<OperandType> vec;
-        for (size_t i = 0; i < operand_count; i++) {}//vec.emplace_back(*(operands + i)); 
+        std::vector<OperandType> vec = operands;
         std::sort(vec.begin(), vec.end());
         auto vs = vec.size();
-        return operand_count % 2 ? vec[vs / 2] : (vec[vs / 2 - 1] + vec[vs / 2]) / 2;
+        return (operands.size() % 2) ? vec[vs / 2] : (vec[vs / 2 - 1] + vec[vs / 2]) / 2;
     };
 };
 
@@ -862,15 +909,15 @@ public:
         _about = "var(X1; X2;...Xn)";
         _usecase = "Variance of given numbers";
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
         OperandType average{ 0 }, result{ 0 };
-        for (size_t i = 0; i < operand_count; i++) 
-            average += *(operands + i);
-        average /= operand_count;
-        for (size_t i = 0; i < operand_count; i++)
-            result += pow((*(operands + i)) - average,2);
-        result /= operand_count;
+        for (size_t i = 0; i < operands.size(); ++i)
+            average += operands.at(i);
+        average /= operands.size();
+        for (size_t i = 0; i < operands.size(); ++i)
+            result += pow((operands.at(i)) - average, 2);
+        result /= operands.size();
         return result;
     };
 };
@@ -881,13 +928,13 @@ public:
     ArithmeticProgression() : CompoundStart("arithprog(",3) 
     {
         _about = "arithprog(base; ratio; elem_count)";
-        _usecase = "Arithmetic progression. Ex: arithprog(10; 1; 3) = 33";
+        _usecase = "Arithmetic progression. Ex: arithprog(10; 1; 3) = 10 + 11 + 12 = 33";
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override 
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        if (*(operands+2) <= 0 )
+        if (operands.at(2) <= 0 )
             throw std::runtime_error("Arithmetic progression: Number of elements cannot be negative or zero.");
-        return *(operands+2) * (2* (*operands) + *(operands+1)*(*(operands+2)-1))/2;
+        return operands.at(2) * (2* operands.at(0) + operands.at(1) * (operands.at(2) - 1))/2;
     };
 };
 
@@ -900,20 +947,20 @@ public:
         _about = "geoprog(base; ratio; elem_count)";
         _usecase = "Geometric progression. Ex: geoprog(8; 1/2; 3) = 8 + 4 + 2 = 14";
     }
-    OperandType Exec(OperandType operands[], int operand_count, std::string str)  const override
+    OperandType Exec(vector<OperandType>& operands, const std::string str)  const override
     {
-        if (round(*(operands + 2)) < 0)
+        if (round(operands.at(2)) < 0)
             throw std::runtime_error("Geometric progression: Number of elements can't be negative.");
-        if (round(*(operands + 2)) == 0 && (*(operands + 1) >= 1))
-            throw std::runtime_error("Geometric progression: Common ratio (second operands) must be < 1.");
+        if (round(operands.at(2)) == 0 && (operands.at(1) >= 1))
+            throw std::runtime_error("Geometric progression: Common ratio (second operand) must be < 1.");
 
-        OperandType oper3 = round(*(operands + 2));
-        if ((*(operands + 1)) == 1) // если это не прогрессия
-            return (*operands) * oper3;  //то вернуть колво членов умнож-е на первоый член
-        else if ((!oper3) && (*(operands + 1)) < 1) //это убывающая прогр-сия и нужна вся сумма
-            return *operands / (1 - *(operands + 1));
+        OperandType oper3 = round(operands.at( 2));
+        if ((operands.at(1)) == 1) // если это не прогрессия
+            return (operands.at(0)) * oper3;  //то вернуть колво членов умнож-е на первоый член
+        else if ((!oper3) && (operands.at(1)) < 1) //это убывающая прогр-сия и нужна вся сумма
+            return operands.at(0) / (1 - operands.at(1));
         else //обычный случай
-            return (*(operands)) * (1 - pow(*(operands + 1), oper3)) / (1 - *(operands + 1));
+            return (operands.at(0)) * (1 - pow(operands.at(1), oper3)) / (1 - operands.at(1));
     };
 };
 

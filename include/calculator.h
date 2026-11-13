@@ -1,9 +1,11 @@
 #pragma once
 
+#include <stdexcept>
 #include <vector>
 #include <string>
-#include "nodetypes.h"
+#include <memory>
 
+#include "nodetypes.h"
 
 class NodeType; 
 class Node;
@@ -23,8 +25,8 @@ class Node;
 /// (S) Single responsibility. Четкое разделение на классы которые в свою очередь
 ///     можно разложить по разным типам. 
 ///         =Дероево классов с абстрактным родителем Nodetype ответтчает за тип операции и
-///         	порядок работы с ней: т.е. любой объект данного дерева способен "узнать" себя
-///         	в строке-выражении, получить числовое значение
+///         	порядок работы с ней: т.е. любой объект данного дерева способен "узнать" 
+//              себя в строке-выражении, получить числовое значение
 ///        =Набор сттруктур Node получается в процессе нарезки строки введенной пользователем
 ///         
 /// (O) Open\Close принцип. Если возникает необхдимость расширения функциональности 
@@ -50,20 +52,18 @@ class Node;
 /// 
 /// </summary>
 
+using OperandType = long double;
+
 class Calculator
 {
     //вектор узлов расчета на основании которых Парсер калькулятора ведет разбор
     // фомируется в конструкторе Калькулятора
-    // // vector<NodeType*> nodetypes;
     std::vector<std::unique_ptr<NodeType>> nodetypes{};
     //вектор узлов, формируется методом ToReversePolishNotation (парсером) из введенноой строки
-    // //vector<Node*> vec; 
     std::vector<std::unique_ptr<Node>> vec{};
 protected:
 public:
-    
     Calculator();
-    
     std::unique_ptr<Node> 
     SliceNextNode(
             //распознаваемая подстрока
@@ -80,4 +80,5 @@ public:
     //Вычисление конечного результата из ОПН лежащей в векторе vector<Node*> vec;
     OperandType Execute();
 };
+
 
