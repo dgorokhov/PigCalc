@@ -514,9 +514,9 @@ public:
 //унарные и бинарные
 //*******************************************
 
-class UnaryMinus: public UnaryOperation{
+class UnaryMinus: public UnaryOperation {
 public:
-    UnaryMinus() : UnaryOperation ("-",Priority::Low) //....низкий?
+    UnaryMinus() : UnaryOperation ("-",Priority::High) //приоритее юольше чем у * и /
     {
         _followed_by = {
         ParsedElem::Number,

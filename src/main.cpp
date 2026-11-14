@@ -6,6 +6,7 @@
 #include "calculator.h"
 
 //to do
+//добавиь sqrt
 // !! переполнение - контороль резуль операций и длины числе (number и пр.)
 // long double a = /* ... */;
 //long double b = /* ... */;
@@ -38,8 +39,9 @@ int main()
             );
             if (rpn == "exit" || rpn == "quit") return 0;
             std::cout << rpn << std::endl;
-            calc.ToReversePolishNotation(rpn);
-            std::cout << calc.Execute() << std::endl;
+            if (!rpn.empty()) calc.ToReversePolishNotation(rpn);
+            if (calc.getRpnSize()) 
+                std::cout << calc.Execute() << std::endl;
         }
         catch (const std::runtime_error& e)
         {

@@ -77,6 +77,7 @@ public:
     void ShowHelp();
     //в обратную польскую нотацию (ОПН)
     void ToReversePolishNotation(std::string& str);
+    size_t getRpnSize() { return vec.size(); }
     //Вычисление конечного результата из ОПН лежащей в векторе vector<Node*> vec;
     OperandType Execute();
 };

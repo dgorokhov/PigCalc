@@ -5,7 +5,8 @@
 #include <vector>
 #include <stack>
 #include <memory>
-
+//#include < Бstring_view>
+#include <print>
 #include "calculator.h"
 #include "nodetypes.h"
 
@@ -108,6 +109,8 @@ Calculator::SliceNextNode(
 {
     auto resultnode = std::make_unique<Node>(); 
 
+    resultnode->nodestatus = ParseStatus::NoRecognize;  //начальное значение
+
     int pos = -1;  // макс знач длины строки
     int ntidx = 0;  //Nodetypes arrary index
     while (ntidx < nodetypes.size()) {
@@ -122,15 +125,15 @@ Calculator::SliceNextNode(
             resultnode->nodetype = nodetypes[ntidx].get();
             //если это не первый нод в строке
             if (prevnode.nodetype) {
-                //если опознанному node type разрешено следовать за предыдущим то ОК    
+                //и если опознанному node type разрешено следовать за предыдущим то ОК    
                 if (prevnode.nodetype->CanBeFollowedBy(nodetypes[ntidx]->getName()))
                     resultnode->nodestatus = ParseStatus::OK;
                 else
-                    //если нет то все
+                    //если нет то опознан но следовать не может.
                     resultnode->nodestatus = ParseStatus::NoFollow;
             }
             else {
-                //если это первый нод в строке 
+                //если prevnode.nodetype==nullptr то это первый нод в строке 
                 if (nodetypes[ntidx]->CanStartExpr())
                     //... и может начинать строку
                     resultnode->nodestatus = ParseStatus::OK;
@@ -147,11 +150,15 @@ Calculator::SliceNextNode(
     {
         resultnode->startpos = prevnode.endpos;
         resultnode->endpos = pos;
-        resultnode->strvalue = str.substr(resultnode->startpos, pos - resultnode->startpos);
+        resultnode->strvalue = str.substr(resultnode->startpos, 5);
         resultnode->nodetype = nullptr;
     }
-    
-    return std::move(resultnode);  
+
+        std::println("{}",resultnode->strvalue);
+                //return std::move(resultnode);  gg
+    return resultnode;  
+
+
 
 }
 
@@ -163,7 +170,9 @@ void Calculator::ToReversePolishNotation(std::string& str)
     std::stack<std::unique_ptr<Node>> stack{};
     
     auto TopStackToVec = [&stack, this]()
-        {   //!!!check for empty
+        {   
+            //!!!check for empty
+            if (stack.empty()) throw std::runtime_error("Stack: nothing to move");
             std::unique_ptr<Node> top_node = std::move(stack.top());
             stack.pop();
             vec.emplace_back(std::move(top_node));
@@ -253,6 +262,17 @@ void Calculator::ToReversePolishNotation(std::string& str)
             {// если (stack.top()->getNodetypeName() == anCompoundStart ) {
                 if (counter > MaxOperandCount) throw std::runtime_error("Too many operands.");
                 stack.top()->args = counter;
+
+                //by google -----
+                OperNeed need = stack.top()->nodetype->getOperNeed();
+                if (need > 0 && counter != need) {
+                    throw std::runtime_error("Parsing error: wrong number of arguments for " + stack.top()->strvalue);
+                }
+                if (need == -1 && counter > 1) { // Если это обычные скобки "(...)" без функции
+                    throw std::runtime_error("Parsing error: unexpected delimiter inside brackets.");
+                }
+                //-------
+
                 TopStackToVec();
             }
             break;
@@ -271,6 +291,7 @@ void Calculator::ToReversePolishNotation(std::string& str)
             if (stack.empty())
                 throw std::runtime_error("Parsing error: " + nodetype->getSymbolset() + " w/o function name.");
             stack.push(std::move(node));
+            
             break;
 
         default:
@@ -288,6 +309,11 @@ void Calculator::ToReversePolishNotation(std::string& str)
         }
         TopStackToVec();
     }
+std::println("polishnotation");
+for (const auto& i : vec) {
+    std::println("{}", i->strvalue);
+}
+
 }
 
 
@@ -298,28 +324,44 @@ OperandType Calculator::Execute()
     OperandType result{};
     //OperandType operands[MaxOperandCount];
     vector<OperandType> operands{};
-
     std::size_t v = 0;
+    ///рабочая переменная не  владеет 
+    NodeType* nodetype = vec[v]->nodetype;
+    
+    for (const auto& i : vec) {
+        std::print("{} | ", i->strvalue);
+    }
+
+    std::println();
     while (v < vec.size())
     {
-        ///рабочая переменная не  владеет 
-        NodeType* nodetype = vec[v]->nodetype;
+
+        auto calculate = [&](string str)  {
+            result = nodetype->Exec(operands, str);
+            CheckResult(result);
+            stack.push(result);
+            std::println("to stack: {}", result);
+        };
+        nodetype = vec[v]->nodetype;
+        operands.clear();
         switch (vec[v]->nodetype->getName())
         {
 
         case ParsedElem::Number:
             //посчитать число (из строки в OperandType) и положить его в стек
-            result = nodetype->Exec(operands, vec[v]->strvalue);
-            CheckResult(result);
-            stack.push(result);
+            calculate(vec[v]->strvalue);
+            // result = nodetype->Exec(operands, vec[v]->strvalue);
+            // CheckResult(result);
+            // stack.push(result);
             break;
 
         case ParsedElem::UnaryOperation:
             if (stack.size() >= 1) {
                 operands.push_back(stack.top()); stack.pop();
-                result = nodetype->Exec(operands, "");
-                CheckResult(result);
-                stack.push(result);
+                calculate("");
+                // result = nodetype->Exec(operands, "");
+                // CheckResult(result);
+                // stack.push(result);
             }
             else {
                 throw std::runtime_error("Parsing error: must be 1 opnd for unary operation.");
@@ -332,9 +374,10 @@ OperandType Calculator::Execute()
                 operands.push_back(stack.top()); stack.pop();
                 operands.push_back(stack.top()); stack.pop();
                 std::reverse(operands.begin(), operands.end());
-                result = nodetype->Exec(operands, "");
-                CheckResult(result);
-                stack.push(result);
+                calculate("");
+                // result = nodetype->Exec(operands, "");
+                // CheckResult(result);
+                // stack.push(result);
             }
             else {
                 throw std::runtime_error("Parsing error: must be 2 operands for binary operation.");
@@ -343,7 +386,6 @@ OperandType Calculator::Execute()
 
         case ParsedElem::CompoundStart: {
             //проверить совпадает ли кол-во операндов необходимое Compound и тому что записано
-            //int i = dynamic_cast<CompoundStart*>(nodetype)->getOperNeed();
             OperNeed opneed = nodetype->getOperNeed();
             if (opneed != 0 && vec[v]->args != opneed) //выяснить 0 это  от 1 и больше?
                 throw std::runtime_error("Parsing error: operand count mismatch.");
@@ -358,15 +400,15 @@ OperandType Calculator::Execute()
             if (stack.empty() && j != -1)
                 throw std::runtime_error("Parsing error: Not enough operands.");
             //посчитать Результат Compounda и положить его в стек
-            result = nodetype->Exec(operands, "");
-            CheckResult(result);
-            stack.push(result);
+            calculate("");
+            // result = nodetype->Exec(operands, "");
+            // CheckResult(result);
+            // stack.push(result);
             break;
         }
         default:
             throw std::runtime_error("Unknown error in parsing procedure.");
             break;
-
         }
         ++v;
     }
