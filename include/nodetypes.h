@@ -8,16 +8,19 @@
 #include <string>
 #include <string_view>
 #include <stdexcept>
+#include <numbers>
 
-#include "calculator.h"
 
-
+using std::string_view;
 using std::string;
 using std::vector;
 
 using OperandType = long double;
-constexpr OperandType MaxNumber = std::numeric_limits<long double>::max()/10;
-constexpr OperandType MinNumber = std::numeric_limits<long double>::min()*10;
+constexpr OperandType MaxNumber = std::numeric_limits<OperandType>::max()/100.0L;
+//constexpr OperandType MinNumber = std::numeric_limits<long double>::min()*100;
+constexpr OperandType MinNumber = std::numeric_limits<OperandType>::epsilon() * 100.0L;
+
+constexpr OperandType PI = std::numbers::pi_v<long double>;
 
 constexpr int MaxOperandCount = 50;
 
@@ -28,44 +31,44 @@ constexpr int MaxOperandCount = 50;
 // N  N
 using OperNeed = int;
 
-
-class CalcValidate {
+class CalcHelper {
 public:
 
-        static OperandType Uncertainty(double value) {
-        // 1. Проверка на неопределенность (0/0, sqrt(-1), inf - inf)
+    static OperandType CheckResult(long double value, const string& context) {
         if (std::isnan(value)) {
-            throw std::domain_error("Uncertainty error. Result is NaN.)");
+            throw std::domain_error(context + "not a number (NaN).");
         }
-
-        // 2. Проверка на переполнение (выход в бесконечность или превышение разумного порога)
-        if (std::isinf(value) || std::abs(value) > MaxNumber) {
-            throw std::overflow_error("Overflow error. Result is too big/small.");
+        if (std::isinf(value)) {
+            throw std::overflow_error(context + "overflow.");
         }
-
-        // 3. Проверка на underflow (потеря точности в денормализованной зоне)
-        if (value != 0.0 && std::fpclassify(value) == FP_SUBNORMAL) {
-            throw std::underflow_error("Underflow error. Result is too close to zero.");
-        }
-
+        // FP_SUBNORMAL, FP_NORMAL и FP_ZERO пропускаем без изменений
         return value;
     }
 
-    // Вспомогательная проверка делителя (для /, %, cot и т.д.)
-    static void Divisor(OperandType divisor) {
-        if (std::abs(divisor) < MinNumber) {
-            throw std::overflow_error("Divisor is too small.");
+    static OperandType ParseNumber(const std::string& token) {
+        try {
+            size_t pos = 0;
+            long double val = std::stold(token, &pos);
+        
+            if (pos != token.size()) {
+                throw std::invalid_argument("Invalid number format: " + token);
+            }
+            if (std::isnan(val) || std::isinf(val)) {
+                throw std::invalid_argument("Unsupported literal: " + token);
+            }
+            return val;
+        }
+        catch (const std::out_of_range&) {
+            throw std::overflow_error("Number out of range: " + token);
         }
     }
-
-    // static void ifHas2Opers(const vector<OperandType>& opers) {
-    //     if (opers.size() != 2) throw std::runtime_error("Wrong number of arguments.");
-    // }
-    // static void ifHas1Oper(const vector<OperandType>& opers) {
-    //     if (opers.size() != 1) throw std::runtime_error("Wrong number of arguments.");
-    // }
+    static OperandType CheckDivisor(long double value) {
+        if (value == 0.0L) {    //строго на полный ноль.  расчеты с subnormal разрешены
+            throw std::domain_error("Division by zero.");
+        }
+        return value;
+    };
 };
-
 
 //тип узла присваемый 
 //узлу расчета парсером калькулятора
@@ -96,6 +99,59 @@ enum class ParseStatus
     NoFollow,         //распознан, но не может следоват за предыдущим
     OK                //все в порядке
 };
+
+/*
+class NodeType
+class Number
+class BinaryNumber
+class HexNumber
+class Constant:
+class BinaryOperation
+class UnaryOperation
+class CompoundStart
+class CompoundEnd
+class OperandDelimiter
+class UnaryMinus:
+class Addition:
+class Substraction:
+class Multiplication:
+class Division:
+class Factorial:
+class Abs
+class Trunc
+class Round
+class Pow
+class Pi
+class Sines:
+class Cosines:
+class Tangents:
+class Cotangents:
+class ArcSines
+class ArcCosines
+class ArcTangents
+class ArcCotangents
+class HyperbolicSines
+class HyperbolicCosines
+class HyperbolicTangents
+class HyperbolicCotangents
+class AreaSines
+class AreaCosines
+class AreaTangents
+class Exponent
+class NaturalLogarithm:
+class Logarithm:
+class Log10
+class Minimum
+class Maximum
+class ArithmeticMean:
+class GeometricMean
+class HarmonicMean
+class Median:
+class Variance:
+class ArithmeticProgression:
+class GeometricProgression
+53 classes
+*/
 
 
 //абстрактрый класс для всех узлов расчета
@@ -199,7 +255,7 @@ public:
         Т.к.параметры передаются по значению, const для параметров не нужен
     */
     virtual OperandType Exec (vector<OperandType>& operands, const std::string str) const { 
-        return 0.0; 
+        return 0.0L; 
     };
 
    
@@ -262,23 +318,7 @@ public:
     // неправильыне данные т.к. вся подстрока м. содержать символы из набора ".0123456789"
     OperandType Exec(vector<OperandType>& operands, const std::string str) const override
     {
-        OperandType result{};
-        try {
-            // Перевод строки в long double
-            result = std::stold(str);
-//            CalcValidate::Uncertainty(result);
- //           CalcValidate::Divisor(result);
-
-        }
-        catch (const std::invalid_argument& e) {
-            // Строка вообще не является числом (например, "abc")
-            throw std::runtime_error("Not a number error: " + 
-                    (str.substr(0,3) + "...").substr(0,5));
-        }   
-        catch (const std::out_of_range& e) {
-            throw std::runtime_error("Number is out of range: " + str.substr(0, 4) + "...");
-        }
-        return result;   //из строки в OperandType....
+        return CalcHelper::ParseNumber(str);
     }
 };
 
@@ -321,7 +361,7 @@ public:
         OperandType sum{ 0.0 };
         while (i >= 2)
             sum += str.at(i) == '0' ? 0 : pow(2, str.length() - 1 - i), --i;
-        return sum;
+        return CalcHelper::CheckResult(sum, _about);
     };
 };
 
@@ -329,7 +369,7 @@ public:
 class HexNumber : public NodeType
 {
 public:
-    HexNumber() : NodeType("0123456789ABCDEF", 0)
+    HexNumber() : NodeType("0123456789abcdef", 0)
     {
         _priority = Priority::Undefined;
         _followed_by = { ParsedElem::BinaryOperation, ParsedElem::OperandDelimiter, ParsedElem::CompoundEnd };
@@ -358,15 +398,15 @@ public:
     {
         //из строки 0x в OperandType
         int i = static_cast<int>(str.length() - 1);
-        OperandType sum{ 0.0 };
+        OperandType sum{ 0.0L };
         while (i >= 2) {
-            if (str.at(i) >= 65)
-                sum += (str.at(i) - 55) * pow(16, str.length() - 1 - i);//......
+            if (str.at(i) >= 85)
+                sum += static_cast<OperandType>(str.at(i) - 87) * pow(16, str.length() - 1 - i);//......
             else
-                sum += (str.at(i) - 48) * pow(16, str.length() - 1 - i);
+                sum += static_cast<OperandType>(str.at(i) - 48) * pow(16, str.length() - 1 - i);
             --i;
         }
-        return sum;
+        return CalcHelper::CheckResult(sum, _about);
     };
 };
 
@@ -376,7 +416,10 @@ class Constant: public NodeType
 public:
     Constant(std::string symbols) : NodeType(symbols, 0)
     {   _priority=Priority::Undefined;
-        _followed_by = { ParsedElem::BinaryOperation, ParsedElem::OperandDelimiter, ParsedElem::CompoundEnd };
+        _followed_by = { 
+            ParsedElem::BinaryOperation, 
+            ParsedElem::OperandDelimiter,
+            ParsedElem::CompoundEnd };
     };
     ParsedElem getName()  const override { return ParsedElem::Number; };
     int DoIRecognizeSelf(const std::string& str, const int startpos)  const override
@@ -534,7 +577,7 @@ public:
     Addition() : BinaryOperation ("+",Priority::Low) {};
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override {
         OperandType op2 = operands.at(0) + operands.at(1);
-        return ( op2 );
+        return ( CalcHelper::CheckResult(op2, _about));
     };
 };
 
@@ -544,7 +587,7 @@ public:
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
         OperandType op2= operands.at(0) - (operands.at(1));
-        return ( op2 );
+        return (CalcHelper::CheckResult(op2 ,_about));
     };
 };
 
@@ -555,7 +598,7 @@ public:
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
         OperandType op2 = operands.at(0) * (operands.at(1));
-        return ( op2 );
+        return ( CalcHelper::CheckResult(op2, _about));
     };
 };
 
@@ -564,9 +607,8 @@ public:
     Division() : BinaryOperation ("/",Priority::Middle) {};
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        if (std::abs(operands.at(1)) < MinNumber)
-            throw std::runtime_error ("Division: divider is zero or too small.");
-        return  operands.at(0) / (operands.at(1));
+        CalcHelper::CheckDivisor(operands.at(1));
+        return  CalcHelper::CheckResult(operands.at(0) / operands.at(1),_about);
     };
 };
 
@@ -581,8 +623,8 @@ public:
  * ";" - это разделитель аргументов.
  * */
 
- class Factorial: public CompoundStart {
- public:
+class Factorial: public CompoundStart {
+public:
      Factorial() : CompoundStart("fac(",1)
 {
     _about = "fac(X)";
@@ -593,18 +635,18 @@ public:
      {
          OperandType result = 1;
          for (int i = 1; i <= round(operands.at(0)); ++i) {
-             result *= i;
+             result = CalcHelper::CheckResult(result * i, _about);
          }
          return result;
      };
- };
+};
 
 class Abs : public CompoundStart {
 public:
     Abs() : CompoundStart("abs(",1) 
     {
         _about = "abs(X)"; 
-        _usecase = "Absolule value of X";
+        _usecase = "Absolute value of X";
     };
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
@@ -647,7 +689,8 @@ public:
     };
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override
     {
-        OperandType op2 = pow(operands.at(0), operands.at( + 1));
+        OperandType op2 = CalcHelper::CheckResult(pow(operands.at(0),
+         operands.at( + 1)), _about);
         return (op2);
     };
 };
@@ -661,7 +704,7 @@ public:
     }
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        return std::numbers::pi;
+        return PI;
     }
 };
 
@@ -675,7 +718,10 @@ public:
     }
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        return sin(operands.at(0));
+        if (std::abs(std::remainder(operands.at(0), PI)) < MinNumber) 
+            return 0.0L; // Возвращаем идеальный ноль, теперь 1 / sin(pi) даст Division by zero!
+        
+        return CalcHelper::CheckResult(std::sin(operands.at(0)), _about);
     };
 };
 
@@ -689,7 +735,9 @@ public:
 
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override
     {
-        return cos(operands.at(0));
+        if (std::abs(std::remainder(operands.at(0) - PI / 2.0L, PI)) < MinNumber) 
+            return 0.0L;
+        return CalcHelper::CheckResult(std::cos(operands.at(0)), _about);
     };
 };
 
@@ -702,11 +750,12 @@ public:
     };
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        OperandType csn = cos(operands.at(0));
-        if ( std::abs(csn) < MinNumber )
-            throw std::runtime_error("Tangents: function is not defined for this angle.");
-        else
-            return std::tan(operands.at(0));
+        if (std::abs(std::remainder(operands.at(0) - PI / 2.0L, PI)) < MinNumber) 
+            throw std::domain_error("Tangents: function is not defined for this argument.");
+        // Если x кратен PI, возвращаем точный ноль
+        if (std::abs(std::remainder(operands.at(0), PI)) < MinNumber) 
+            return 0.0L;    
+        return CalcHelper::CheckResult(std::tan(operands.at(0)), _about);
     };
 };
 
@@ -719,12 +768,194 @@ public:
         _usecase = "Cotangents of X";
     };
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override {
-        OperandType ssn = sin(operands.at(0));
-        if ( std::abs(ssn) < MinNumber )
-            throw std::runtime_error("Cotangents: function is not defined for this angle.");
-        else
-            return std::cos(operands.at(0))/ssn;
+
+        if (std::abs(std::remainder(operands.at(0), PI)) < MinNumber) 
+            throw std::domain_error("Cotangents: function is not defined for this argument.");
+        
+        if (std::abs(std::remainder(operands.at(0) - PI / 2.0L, PI)) < MinNumber) 
+            return 0.0L;
+        return CalcHelper::CheckResult(
+            1/CalcHelper::CheckDivisor(std::tan(operands.at(0))), _about);
+            //std::cos(operands.at(0)/std::sin(operands.at(0))), _about);
     };
+};
+// ============================================================================
+// Обратные тригонометрические функции
+// ============================================================================
+
+class ArcSines : public CompoundStart {
+public:
+    ArcSines() : CompoundStart("asin(", 1) {
+        _about = "asin(X)";
+        _usecase = "Arcsine of X in radians, X in [-1, 1]";
+    }
+
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override {
+        
+        OperandType x = operands.at(0);
+        if (x > 1.0L && x <= 1.0L + MinNumber) x = 1.0L;
+        if (x < -1.0L && x >= -1.0L - MinNumber) x = -1.0L;
+
+        if (x < -1.0L || x > 1.0L) {
+            throw std::domain_error("ArcSines: argument must be in [-1, 1].");
+        }
+        return CalcHelper::CheckResult(std::asin(x), _about);
+    }
+};
+
+class ArcCosines : public CompoundStart {
+public:
+    ArcCosines() : CompoundStart("acos(", 1) {
+        _about = "acos(X)";
+        _usecase = "Arccosine of X in radians, X in [-1, 1]";
+    }
+
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override {
+        OperandType x = operands.at(0);
+        if (x > 1.0L && x <= 1.0L + MinNumber) x = 1.0L;
+        if (x < -1.0L && x >= -1.0L - MinNumber) x = -1.0L;
+
+        if (x < -1.0L || x > 1.0L) {
+            throw std::domain_error("ArcCosines: argument must be in [-1, 1].");
+        }
+        return CalcHelper::CheckResult(std::acos(x), _about);
+    }
+};
+
+class ArcTangents : public CompoundStart {
+public:
+    ArcTangents() : CompoundStart("atan(", 1) {
+        _about = "atan(X)";
+        _usecase = "Arctangent of X in radians";
+    }
+
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override {
+        return std::atan(operands.at(0));
+    }
+};
+
+class ArcCotangents : public CompoundStart {
+public:
+    ArcCotangents() : CompoundStart("acot(", 1) {
+        _about = "acot(X)";
+        _usecase = "Arccotangent of X in radians (0, pi)";
+    }
+
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override {
+        // Формула pi/2 - atan(x) определена для всех x (включая x = 0, где acot(0) = pi/2)
+        // и возвращает значение в главном диапазоне (0, pi)
+        return (std::numbers::pi_v<OperandType> / 2.0L) - std::atan(operands.at(0));
+    }
+};
+
+// ============================================================================
+// Гиперболические функции
+// ============================================================================
+
+class HyperbolicSines : public CompoundStart {
+public:
+    HyperbolicSines() : CompoundStart("sinh(", 1) {
+        _about = "sinh(X)";
+        _usecase = "Hyperbolic sine of X";
+    }
+
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override {
+        return CalcHelper::CheckResult(std::sinh(operands.at(0)), _about);
+    }
+};
+
+class HyperbolicCosines : public CompoundStart {
+public:
+    HyperbolicCosines() : CompoundStart("cosh(", 1) {
+        _about = "cosh(X)";
+        _usecase = "Hyperbolic cosine of X";
+    }
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override {
+        return CalcHelper::CheckResult(std::cosh(operands.at(0)), _about);
+    }
+};
+
+class HyperbolicTangents : public CompoundStart {
+public:
+    HyperbolicTangents() : CompoundStart("tanh(", 1) {
+        _about = "tanh(X)";
+        _usecase = "Hyperbolic tangent of X";
+    }
+
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override {
+        return std::tanh(operands.at(0));
+    }
+};
+
+class HyperbolicCotangents : public CompoundStart {
+public:
+    HyperbolicCotangents() : CompoundStart("coth(", 1) {
+        _about = "coth(X)";
+        _usecase = "Hyperbolic cotangent of X, X != 0";
+    }
+
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override {
+        OperandType x = operands.at(0);
+        OperandType sh = std::sinh(x);
+        if (std::abs(sh) == 0.0L) {
+            throw std::domain_error("HyperbolicCotangents: function is not defined for X = 0.");
+        }
+        // Для очень больших |x| и cosh(x), и sinh(x) уходят в inf, давая NaN при делении.
+        // Математически при |x| > 50 coth(x) с точностью long double равен +1 или -1.
+
+        if (std::isinf(sh)) {
+            return (x > 0.0L) ? 1.0L : -1.0L;
+        }
+        return CalcHelper::CheckResult(std::cosh(x) / sh, _about);
+    }
+};
+
+// ============================================================================
+// Обратные гиперболические функции (ареа-функции)
+// ============================================================================
+
+class AreaSines : public CompoundStart {
+public:
+    AreaSines() : CompoundStart("asinh(", 1) {
+        _about = "asinh(X)";
+        _usecase = "Inverse hyperbolic sine of X";
+    }
+
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override {
+        return CalcHelper::CheckResult(std::asinh(operands.at(0)), _about);
+    }
+};
+
+class AreaCosines : public CompoundStart {
+public:
+    AreaCosines() : CompoundStart("acosh(", 1) {
+        _about = "acosh(X)";
+        _usecase = "Inverse hyperbolic cosine of X, X >= 1";
+    }
+
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override {
+        OperandType x = operands.at(0);
+        if (x < 1.0L) {
+            throw std::domain_error("AreaCosines: argument must be >= 1.");
+        }
+        return CalcHelper::CheckResult(std::acosh(x), _about);
+    }
+};
+
+class AreaTangents : public CompoundStart {
+public:
+    AreaTangents() : CompoundStart("atanh(", 1) {
+        _about = "atanh(X)";
+        _usecase = "Inverse hyperbolic tangent of X, X in (-1, 1)";
+    }
+
+    OperandType Exec(vector<OperandType>& operands, const std::string str) const override {
+        OperandType x = operands.at(0);
+        if (x <= -1.0L || x >= 1.0L) {
+            throw std::domain_error("AreaTangents: argument must be in (-1, 1).");
+        }
+        return CalcHelper::CheckResult(std::atanh(x), _about);
+    }
 };
 
 //Logarithmic
@@ -739,7 +970,7 @@ public:
     }
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override
     {
-        return std::numbers::e;
+        return std::numbers::e_v<long double>;
     }
 };
 
@@ -754,9 +985,9 @@ public:
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
         if ( (operands.at(0)) <= 0 )
-            throw std::runtime_error("Logarithm: function is not defined for negatives and very small numbers.");
+            throw std::domain_error("Logarithm: argument must be > 0.");
         else
-            return std::log(operands.at(0));
+            return CalcHelper::CheckResult(std::log(operands.at(0)), _about);
     };
 };
 
@@ -764,20 +995,21 @@ class Logarithm: public CompoundStart {
 public:
     Logarithm() : CompoundStart("log(",2)
     {
-        _about = "log(X; base)";
-        _usecase = "Logarithm of X. Ex: log(8, 2) = 3";
+        _about = "log(base; X)";
+        _usecase = "Logarithm of X. Ex: log(2, 8) = 3";
     }
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        if ( (operands.at(0)) <= 0 )
-            throw std::runtime_error("Logarithm: function is not defined for negatives and very small numbers.");
-        else {
-            OperandType znam = log(operands.at(1));
-            if (znam > MinNumber)
-                return std::log(operands.at(0))/znam;
-            else
-                throw std::runtime_error("Logarithm: function is not defined for this value.");
-        }
+        auto base = operands.at(0);
+        auto x = operands.at(1);
+       
+        if ( x <= 0 || base <= 0 )
+            throw std::domain_error("Logarithm: argument(s) must be > 0.");
+        if (std::abs(1.0L - base) < MinNumber) 
+            throw std::domain_error("Logarithm: the base is too close to 1.");
+        return CalcHelper::CheckResult(
+                std::log(operands.at(1))/std::log(operands.at(0)), _about);
+        
     };
 };
 
@@ -791,9 +1023,9 @@ public:
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
         if ((operands.at(0)) <= 0)
-            throw std::runtime_error("Logarithm: function is not defined for negatives.");
+            throw std::domain_error("Logarithm: argument must be > 0.");
         else {
-            return std::log(operands.at(0)) / log(10);
+            return CalcHelper::CheckResult(std::log10(operands.at(0)),_about);
         }
     };
 };
@@ -862,9 +1094,9 @@ public:
     {
         OperandType res = 1.0;
         for (size_t i = 0; i < operands.size(); ++i) {
-            res *= operands.at(i);
+            res = CalcHelper::CheckResult(res * operands.at(i), _about);
         }
-        return pow(res, 1.0/operands.size());
+        return CalcHelper::CheckResult(pow(res, 1.0/operands.size()), _about);
     };
 };
 
@@ -880,9 +1112,9 @@ public:
     {
         OperandType res = 0;
         for (size_t i = 0; i < operands.size(); ++i) {
-            res += 1 / operands.at(i);
+            res += 1 / CalcHelper::CheckDivisor(operands.at(i));
         }
-        return operands.size() / res;
+        return operands.size() / CalcHelper::CheckDivisor(res);
     };
 };
 
@@ -916,9 +1148,9 @@ public:
             average += operands.at(i);
         average /= operands.size();
         for (size_t i = 0; i < operands.size(); ++i)
-            result += pow((operands.at(i)) - average, 2);
+            result += CalcHelper::CheckResult(pow((operands.at(i)) - average, 2),_about);
         result /= operands.size();
-        return result;
+        return CalcHelper::CheckResult(result, _about);
     };
 };
 
@@ -933,12 +1165,11 @@ public:
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
         if (operands.at(2) <= 0 )
-            throw std::runtime_error("Arithmetic progression: Number of elements cannot be negative or zero.");
-        return operands.at(2) * (2* operands.at(0) + operands.at(1) * (operands.at(2) - 1))/2;
-    };
+            throw std::domain_error("Arithmetic progression: Number of elements cannot be negative or zero.");
+        OperandType result = operands.at(2) * (2* operands.at(0) + operands.at(1) * (operands.at(2) - 1))/2;
+        return CalcHelper::CheckResult(result, _about);
+    }
 };
-
-
 
 class GeometricProgression : public CompoundStart {
 public:
@@ -950,17 +1181,19 @@ public:
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override
     {
         if (round(operands.at(2)) < 0)
-            throw std::runtime_error("Geometric progression: Number of elements can't be negative.");
+            throw std::domain_error("Geometric progression: Number of elements can't be negative.");
         if (round(operands.at(2)) == 0 && (operands.at(1) >= 1))
-            throw std::runtime_error("Geometric progression: Common ratio (second operand) must be < 1.");
+            throw std::domain_error("Geometric progression: Common ratio (second operand) must be < 1.");
 
         OperandType oper3 = round(operands.at( 2));
+        OperandType result{};
         if ((operands.at(1)) == 1) // если это не прогрессия
-            return (operands.at(0)) * oper3;  //то вернуть колво членов умнож-е на первоый член
+            result = (operands.at(0)) * oper3;  //то вернуть колво членов умнож-е на первоый член
         else if ((!oper3) && (operands.at(1)) < 1) //это убывающая прогр-сия и нужна вся сумма
-            return operands.at(0) / (1 - operands.at(1));
+            result = operands.at(0) / CalcHelper::CheckDivisor(1 - operands.at(1));
         else //обычный случай
-            return (operands.at(0)) * (1 - pow(operands.at(1), oper3)) / (1 - operands.at(1));
+            result = (operands.at(0)) * (1 - pow(operands.at(1), oper3)) / CalcHelper::CheckDivisor(1 - operands.at(1));
+        return CalcHelper::CheckResult(result, _about);
     };
-};
 
+};

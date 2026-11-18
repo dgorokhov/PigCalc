@@ -1,14 +1,13 @@
 #pragma once
 
-#include <stdexcept>
 #include <vector>
 #include <string>
 #include <memory>
 
 #include "nodetypes.h"
 
-class NodeType; 
-class Node;
+//class NodeType; 
+//class Node;
 
 
 /// <summary>
@@ -52,8 +51,6 @@ class Node;
 /// 
 /// </summary>
 
-using OperandType = long double;
-
 class Calculator
 {
     //вектор узлов расчета на основании которых Парсер калькулятора ведет разбор
@@ -73,9 +70,10 @@ public:
             //Node* prevnode
             const Node& prevnode
     ) const;
-    void CheckResult(OperandType result);
+    void FinalizeResult(OperandType& result);
     void ShowHelp();
     //в обратную польскую нотацию (ОПН)
+    void PreProcessInStr(std::string& str); 
     void ToReversePolishNotation(std::string& str);
     size_t getRpnSize() { return vec.size(); }
     //Вычисление конечного результата из ОПН лежащей в векторе vector<Node*> vec;

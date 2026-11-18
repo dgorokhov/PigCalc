@@ -5,10 +5,10 @@
 #include <vector>
 #include <stack>
 #include <memory>
-//#include < Бstring_view>
+//#include <string_view>
 #include <print>
 #include "calculator.h"
-#include "nodetypes.h"
+
 
 
 
@@ -28,7 +28,7 @@ Calculator::Calculator()
     nodetypes.emplace_back(std::make_unique<Division>());
     nodetypes.emplace_back(std::make_unique<CompoundStart>("(", 0));
     nodetypes.emplace_back(std::make_unique<CompoundEnd>(")"));
-    nodetypes.emplace_back(std::make_unique<OperandDelimiter>(";"));
+    nodetypes.emplace_back(std::make_unique<OperandDelimiter>(","));
 
     nodetypes.emplace_back(std::make_unique<BinaryNumber>());
     nodetypes.emplace_back(std::make_unique<HexNumber>());
@@ -55,6 +55,17 @@ Calculator::Calculator()
     nodetypes.emplace_back(std::make_unique<Cosines>());
     nodetypes.emplace_back(std::make_unique<Tangents>());
     nodetypes.emplace_back(std::make_unique<Cotangents>());
+    nodetypes.emplace_back(std::make_unique<ArcSines>());
+    nodetypes.emplace_back(std::make_unique<ArcCosines>());
+    nodetypes.emplace_back(std::make_unique<ArcTangents>());
+    nodetypes.emplace_back(std::make_unique<ArcCotangents>());
+    nodetypes.emplace_back(std::make_unique<HyperbolicSines>());
+    nodetypes.emplace_back(std::make_unique<HyperbolicCosines>());
+    nodetypes.emplace_back(std::make_unique<HyperbolicTangents>());
+    nodetypes.emplace_back(std::make_unique<HyperbolicCotangents>());
+    nodetypes.emplace_back(std::make_unique<AreaSines>());
+    nodetypes.emplace_back(std::make_unique<AreaCosines>());
+    nodetypes.emplace_back(std::make_unique<AreaTangents>());
     
     nodetypes.emplace_back(std::make_unique<Logarithm>());
     nodetypes.emplace_back(std::make_unique<NaturalLogarithm>());
@@ -80,17 +91,28 @@ void Calculator::ShowHelp()
         << "--> ((2.2212+3*10) * max(10; 33+arithmean(12; ln(11); 5*6.23; pow(3;8); 11))) / (13 * 12)\n\n";
 }
 
-void Calculator::CheckResult(OperandType result)
-{
-    if (std::isinf(result)) {
-        // Реагируем на переполнение ДО того, как оно превратится в 0 на следующем шаге
-        throw std::runtime_error("Overflow error.");
-    }
-    if (std::isnan(result)) {
-        throw std::runtime_error("Not a number error.");
+void Calculator::PreProcessInStr(std::string& str) {
+    
+    // 1. Удаляем все пробельные символы (пробелы, табуляции \t, переносы \n, \r)
+    // Важно: приводим char к unsigned char, чтобы избежать UB на отрицательных символах (например, кириллице)
+    str.erase( std::remove_if(
+            str.begin(), str.end(), []
+            (unsigned char c) {
+            return std::isspace(c);}), 
+            str.end()
+    );
+    // 2. Приводим оставшиеся символы к нижнему регистру
+    std::transform(str.begin(), str.end(), str.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+};
+
+void Calculator::FinalizeResult(OperandType& result) {
+    // Убирает и микроскопические погрешности, и отрицательный ноль (-0.0)
+    if (std::abs(result) < MinNumber) {
+        result = 0.0L;
     }
 }
-
 ///поисковая процедуа
 ///возвращает 
 ///     
@@ -154,8 +176,8 @@ Calculator::SliceNextNode(
         resultnode->nodetype = nullptr;
     }
 
-        std::println("{}",resultnode->strvalue);
-                //return std::move(resultnode);  gg
+//  std::println(" {} ",resultnode->strvalue);
+//return std::move(resultnode);  gg
     return resultnode;  
 
 
@@ -272,7 +294,6 @@ void Calculator::ToReversePolishNotation(std::string& str)
                     throw std::runtime_error("Parsing error: unexpected delimiter inside brackets.");
                 }
                 //-------
-
                 TopStackToVec();
             }
             break;
@@ -311,7 +332,7 @@ void Calculator::ToReversePolishNotation(std::string& str)
     }
 std::println("polishnotation");
 for (const auto& i : vec) {
-    std::println("{}", i->strvalue);
+    std::print("| {} ", i->strvalue);
 }
 
 }
@@ -327,18 +348,18 @@ OperandType Calculator::Execute()
     std::size_t v = 0;
     ///рабочая переменная не  владеет 
     NodeType* nodetype = vec[v]->nodetype;
-    
-    for (const auto& i : vec) {
-        std::print("{} | ", i->strvalue);
-    }
 
+    std::print("rpn : ");    
+    for (const auto& i : vec) {
+        std::print(" {} | ", i->strvalue);
+    }
     std::println();
+
     while (v < vec.size())
     {
-
         auto calculate = [&](string str)  {
             result = nodetype->Exec(operands, str);
-            CheckResult(result);
+            FinalizeResult(result);
             stack.push(result);
             std::println("to stack: {}", result);
         };
@@ -350,18 +371,12 @@ OperandType Calculator::Execute()
         case ParsedElem::Number:
             //посчитать число (из строки в OperandType) и положить его в стек
             calculate(vec[v]->strvalue);
-            // result = nodetype->Exec(operands, vec[v]->strvalue);
-            // CheckResult(result);
-            // stack.push(result);
             break;
 
         case ParsedElem::UnaryOperation:
             if (stack.size() >= 1) {
                 operands.push_back(stack.top()); stack.pop();
                 calculate("");
-                // result = nodetype->Exec(operands, "");
-                // CheckResult(result);
-                // stack.push(result);
             }
             else {
                 throw std::runtime_error("Parsing error: must be 1 opnd for unary operation.");
@@ -369,15 +384,10 @@ OperandType Calculator::Execute()
             break;
         case ParsedElem::BinaryOperation:
             if (stack.size() >= 2) {
-                //operands[1] = stack.top(); stack.pop();
-                //operands[0] = stack.top(); stack.pop();
                 operands.push_back(stack.top()); stack.pop();
                 operands.push_back(stack.top()); stack.pop();
                 std::reverse(operands.begin(), operands.end());
                 calculate("");
-                // result = nodetype->Exec(operands, "");
-                // CheckResult(result);
-                // stack.push(result);
             }
             else {
                 throw std::runtime_error("Parsing error: must be 2 operands for binary operation.");
@@ -401,9 +411,6 @@ OperandType Calculator::Execute()
                 throw std::runtime_error("Parsing error: Not enough operands.");
             //посчитать Результат Compounda и положить его в стек
             calculate("");
-            // result = nodetype->Exec(operands, "");
-            // CheckResult(result);
-            // stack.push(result);
             break;
         }
         default:
