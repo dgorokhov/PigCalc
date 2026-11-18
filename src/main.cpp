@@ -7,22 +7,26 @@
 
 /* TODO
 ////////////////////////////////////////////////////////
-x1) привести все к нижнему регистру
-x2)  добавиь sqrt,arcsin,arc.. гиперболич функции
+ОК x1) привести все к нижнему регистру
+ОК 2)  добавиь sqrt,arcsin,arc.. гиперболич функции
+!тесты для slice, ...exec , topolishnotation
+Если позиционировать как научный то musthave
+    OK    !! сделать работу с науч нотацией\
+    !2a)radiand/degreee
+!редактирование строки, history
+!не спотык-ся на utf
+=vars
+
+comamds: help
 3)в процедуре slicenextnode изменить логику опреледеения следующего tokena
     (сейас проблема - 0xFF не опред-ся как шестнадц число)    
     если нескольько токенов удовлетв первым символам то беереся наиболе длинное совпадение
 
-3a    EPS evaluates to 9.9999999999999998e-13.
-4) !! сделать работу с науч нотацией\
     -вываод в НН, узнавание 34e10 =340 переводит правильно, 34e+10 = 44 складывает
 5) рабта в других системах счисления - все операции в int?
 6) точность расчета?
 
- !! переполнение - контороль резуль операций и длины числе (number и пр.)
-long double a = 
-long double b = 
-long double result = a * b;
+ 
 
  
  можно добавитть расчет точности подсчета +\-
@@ -49,23 +53,22 @@ int main()
             if (calc.getRpnSize()) 
                 std::cout << calc.Execute() << std::endl;
         }
-       // 1. Specific logic errors (derived from std::logic_error)
-       //ошибки - аргумент не из области определения функции ()
-       catch (const std::domain_error& e) {
-           std::cerr << "[Domain]: " << e.what() << '\n';
-       }
-       // Specific calculation errors (derived from std::runtime_error)
-       catch (const std::overflow_error& e) {
-           std::cerr << "[Overflow]: " << e.what() << '\n';
-       }
-       // 3. Base classes (strictly AFTER their derived classes)
-       catch (const std::runtime_error& e) {
-           std::cerr << "[General]: " << e.what() << '\n';
-       }
-       // 4. Most general catch-all handler
-       catch (const std::exception& e) {
-           std::cerr << "[Unknown Error]: " << e.what() << '\n';
-       }
+        // 1. Specific logic errors (derived from std::logic_error)
+        //ошибки - аргумент не из области определения функции ()
+        catch (const std::domain_error& e) {
+            std::cerr << "[Domain]: " << e.what() << '\n';
+        }
+        catch (const std::overflow_error& e) {
+            std::cerr << "[Overflow]: " << e.what() << '\n';
+        }
+        // Главным образом ошибки парсинга
+        catch (const std::runtime_error& e) {
+            std::cerr << "[General]: " << e.what() << '\n';
+        }
+        //все остальное
+        catch (const std::exception& e) {
+            std::cerr << "[Unknown Error]: " << e.what() << '\n';
+        }
     }
     std::cout << "\nBye!\n";
     return 0;

@@ -20,7 +20,8 @@ constexpr OperandType MaxNumber = std::numeric_limits<OperandType>::max()/100.0L
 //constexpr OperandType MinNumber = std::numeric_limits<long double>::min()*100;
 constexpr OperandType MinNumber = std::numeric_limits<OperandType>::epsilon() * 100.0L;
 
-constexpr OperandType PI = std::numbers::pi_v<long double>;
+constexpr OperandType NUMBER_PI = std::numbers::pi_v<OperandType>;
+constexpr OperandType NUMBER_E = std::numbers::e_v<OperandType>; 
 
 constexpr int MaxOperandCount = 50;
 
@@ -300,7 +301,7 @@ public:
     // это уузел рассчета ЧИСЛО (number) которое мож.быть записано 
     //любым кол-вом символов (второй параметр конструктора ==0) 
     //из набора символов ".0123456789"
-    Number() : NodeType(".0123456789", 0)
+    Number() : NodeType(".0123456789e", 0)
     {
         _priority = Priority::Undefined;
         //после узла Number может следовать :
@@ -313,6 +314,35 @@ public:
     //класс number относится к категории чисел "return ParsedElem::Number;"
     //(эту инфор-ю использует парсер калькулятора
     ParsedElem getName() const override { return ParsedElem::Number; };
+    int DoIRecognizeSelf(const std::string& str, int startpos) const override
+    {
+        
+        if (startpos < 0 || static_cast<size_t>(startpos) >= str.length()) {
+            return -1;
+        }
+        const char* first = str.data() + startpos;
+        const char* last = str.data() + str.length();
+        
+        // 1. Отсекаем унарный минус/плюс (from_chars разрешает '-', но не '+')
+        // и убеждаемся, что токен начинается именно с цифры или точки
+        if (*first != '.' && !std::isdigit(static_cast<unsigned char>(*first))) {
+            return -1;
+        }
+        // 2. Перекладываем всю работу по поиску конца числа на стандартную библиотеку!
+        /*  std::from_chars. Он работает прямо по указателям внутри исходной строки str (вообще 
+            без substr), не пропускает пробелы, не понимает 0x и строит ровно тот же формат числа
+            , что и std::stold.
+        */
+        long double dummy_value = 0.0L;
+        auto [ptr, ec] = std::from_chars(first, last, dummy_value);
+        // Если число не распознано (например, стояла одинокая точка ".")
+        if (ec == std::errc::invalid_argument) {
+            return -1;
+        }
+        // Возвращаем индекс первого символа, на котором остановился парсер
+        return static_cast<int>(ptr - str.data());
+    }
+
     //чтобы преобразовать строку содержащую number нужно
     // просто вызвать стандартную функцию преобр-я stof. Stof не получит
     // неправильыне данные т.к. вся подстрока м. содержать символы из набора ".0123456789"
@@ -372,7 +402,10 @@ public:
     HexNumber() : NodeType("0123456789abcdef", 0)
     {
         _priority = Priority::Undefined;
-        _followed_by = { ParsedElem::BinaryOperation, ParsedElem::OperandDelimiter, ParsedElem::CompoundEnd };
+        _followed_by = { 
+            ParsedElem::BinaryOperation, 
+            ParsedElem::OperandDelimiter,
+            ParsedElem::CompoundEnd };
 
         _about = "0x1AF233C";
         _usecase = "Hex number, without fraction part";
@@ -704,7 +737,7 @@ public:
     }
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        return PI;
+        return NUMBER_PI;
     }
 };
 
@@ -718,7 +751,7 @@ public:
     }
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        if (std::abs(std::remainder(operands.at(0), PI)) < MinNumber) 
+        if (std::abs(std::remainder(operands.at(0), NUMBER_PI)) < MinNumber) 
             return 0.0L; // Возвращаем идеальный ноль, теперь 1 / sin(pi) даст Division by zero!
         
         return CalcHelper::CheckResult(std::sin(operands.at(0)), _about);
@@ -735,7 +768,7 @@ public:
 
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override
     {
-        if (std::abs(std::remainder(operands.at(0) - PI / 2.0L, PI)) < MinNumber) 
+        if (std::abs(std::remainder(operands.at(0) - NUMBER_PI / 2.0L, NUMBER_PI)) < MinNumber) 
             return 0.0L;
         return CalcHelper::CheckResult(std::cos(operands.at(0)), _about);
     };
@@ -750,10 +783,10 @@ public:
     };
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override 
     {
-        if (std::abs(std::remainder(operands.at(0) - PI / 2.0L, PI)) < MinNumber) 
+        if (std::abs(std::remainder(operands.at(0) - NUMBER_PI / 2.0L, NUMBER_PI)) < MinNumber) 
             throw std::domain_error("Tangents: function is not defined for this argument.");
-        // Если x кратен PI, возвращаем точный ноль
-        if (std::abs(std::remainder(operands.at(0), PI)) < MinNumber) 
+        // Если x кратен NUMBER_PI, возвращаем точный ноль
+        if (std::abs(std::remainder(operands.at(0), NUMBER_PI)) < MinNumber) 
             return 0.0L;    
         return CalcHelper::CheckResult(std::tan(operands.at(0)), _about);
     };
@@ -769,10 +802,10 @@ public:
     };
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override {
 
-        if (std::abs(std::remainder(operands.at(0), PI)) < MinNumber) 
+        if (std::abs(std::remainder(operands.at(0), NUMBER_PI)) < MinNumber) 
             throw std::domain_error("Cotangents: function is not defined for this argument.");
         
-        if (std::abs(std::remainder(operands.at(0) - PI / 2.0L, PI)) < MinNumber) 
+        if (std::abs(std::remainder(operands.at(0) - NUMBER_PI / 2.0L, NUMBER_PI)) < MinNumber) 
             return 0.0L;
         return CalcHelper::CheckResult(
             1/CalcHelper::CheckDivisor(std::tan(operands.at(0))), _about);
@@ -961,16 +994,16 @@ public:
 //Logarithmic
 //*****************************************************
 
-class Exponent : public Constant {
+class Exponent : public CompoundStart {
 public:
-    Exponent() : Constant("exp")
+    Exponent() : CompoundStart("exp(", 1)
     {
-        _about = "exp";
-        _usecase = "Exponent = 2.71828182845904523536...";
+        _about = "exp(X)";
+        _usecase = "Exponent = (E)^X, Ex: exp(1) = 2.71828182845904523536...";
     }
     OperandType Exec(vector<OperandType>& operands, const std::string str)  const override
     {
-        return std::numbers::e_v<long double>;
+        return CalcHelper::CheckResult(std::exp(operands.at(0)), _about);
     }
 };
 

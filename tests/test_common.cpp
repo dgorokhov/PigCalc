@@ -18,12 +18,12 @@ TEST(CalcHelperTest, NormalValues) {
 }
 
 TEST(CalcValidateTest, NaNThrowsDomainError) {
-    double nan_val = std::numeric_limits<double>::quiet_NaN();
+    OperandType nan_val = std::numeric_limits<OperandType>::quiet_NaN();
     EXPECT_THROW(CalcHelper::CheckResult(nan_val,""), std::domain_error);
 }
 
 TEST(CalcValidateTest, OverflowThrowsOverflowError) {
-    double inf_val = std::numeric_limits<double>::infinity();
+    OperandType inf_val = std::numeric_limits<OperandType>::infinity();
     EXPECT_THROW(CalcHelper::CheckResult(inf_val, ""), std::overflow_error);
     EXPECT_THROW(CalcHelper::CheckResult(-inf_val, ""), std::overflow_error);
 }
@@ -44,7 +44,7 @@ TEST(NumberTest, RecognitionAndExecution) {
     //либо -1 если не распознали
     EXPECT_EQ(num.DoIRecognizeSelf("123.45+6", 0), 6);
     EXPECT_EQ(num.DoIRecognizeSelf("e-5*2", 0), -1);
-    EXPECT_EQ(num.DoIRecognizeSelf("1e-5*2", 0), 1);
+    EXPECT_EQ(num.DoIRecognizeSelf("1e-5*2", 0), 4);
     EXPECT_EQ(num.DoIRecognizeSelf("+123", 0), -1);
 
     EXPECT_NEAR(num.Exec(empty_ops, "123.45"), 123.45L, MinNumber);
@@ -84,17 +84,21 @@ TEST(HexNumberTest, RecognitionAndExecution) {
     EXPECT_NEAR(hex.Exec(empty_ops, "0x0"), 0.0L, MinNumber);
 }
 
-TEST(ConstantsTest, PiAndExponent) {
+TEST(ConstantsTest, Pi) {
     Pi pi_node;
-    Exponent exp_node;
-    std::vector<OperandType> empty_ops;
+    std::vector<OperandType> ops = {};
 
     EXPECT_EQ(pi_node.DoIRecognizeSelf("pi*2", 0), 2);
     EXPECT_EQ(pi_node.DoIRecognizeSelf("p*2", 0), -1);
-    EXPECT_NEAR(pi_node.Exec(empty_ops, "pi"), std::numbers::pi_v<OperandType>, MinNumber);
+    EXPECT_NEAR(pi_node.Exec(ops, "pi"), NUMBER_PI, MinNumber);
+}
 
-    EXPECT_EQ(exp_node.DoIRecognizeSelf("exp+1", 0), 3);
-    EXPECT_NEAR(exp_node.Exec(empty_ops, "exp"), std::numbers::e_v<OperandType>, MinNumber);
+TEST(ExponentTest, Exp) {
+    Exponent exp_node;
+    std::vector<OperandType> ops = { 2.0L};
+
+    EXPECT_EQ(exp_node.DoIRecognizeSelf("exp(1)", 0), 4);
+    EXPECT_NEAR(exp_node.Exec(ops, "exp"), std::exp(2.0L), MinNumber);
 }
 
 // ============================================================================
@@ -175,9 +179,9 @@ TEST(TrigTest, SinAndCos) {
     Cosines cos_node;
     
     std::vector<OperandType> zero = {0.0L};
-    std::vector<OperandType> half_pi = {PI / 2.0L};
-    std::vector<OperandType> quorter_pi = {PI / 4.0L};
-    auto res_for_qpi = static_cast<OperandType>(std::sqrt(2)/2);
+    std::vector<OperandType> half_pi = {NUMBER_PI / 2.0L};
+    std::vector<OperandType> quorter_pi = {NUMBER_PI / 4.0L};
+    auto res_for_qpi = static_cast<OperandType>(std::sqrt(2.0L)/2.0L);
     EXPECT_NEAR(sin_node.Exec(quorter_pi, "sin("), res_for_qpi, MinNumber);
     EXPECT_NEAR(cos_node.Exec(quorter_pi, "cos("), res_for_qpi, MinNumber);
 
@@ -193,13 +197,15 @@ TEST(TrigTest, TanAndCotan) {
     Cotangents cot_node;
     OperandType pi = std::numbers::pi_v<OperandType>;
 
-    std::vector<OperandType> quarter_pi = {pi / 4.0L};
+    std::vector<OperandType> half_pi = {NUMBER_PI / 2.0L};
+    std::vector<OperandType> quarter_pi = {NUMBER_PI / 4.0L};
     std::vector<OperandType> zero = {0.0L};
 
     EXPECT_NEAR(tan_node.Exec(quarter_pi, "tan("), 1.0L, MinNumber);
     EXPECT_NEAR(cot_node.Exec(quarter_pi, "cotan("), 1.0L, MinNumber);
 
     // Граничный случай: cotan(0) -> sin(0) == 0 -> исключение
+    EXPECT_THROW(tan_node.Exec(half_pi, "tan("), std::domain_error);
     EXPECT_THROW(cot_node.Exec(zero, "cotan("), std::domain_error);
     
 }
@@ -271,7 +277,7 @@ TEST(HyperbolicTest, SinhAndCosh) {
 
     std::vector<OperandType> zero = {0.0L};
     std::vector<OperandType> one = {1.0L};
-    std::vector<OperandType> huge = {20000.0L}; // Переполнение для 80-bit long double (макс ~11356)
+    std::vector<OperandType> huge = {20000.0L}; // Переполнение для 80-bit long OperandType (макс ~11356)
 
     EXPECT_NEAR(sinh_node.Exec(zero, "sinh("), 0.0L, MinNumber);
     EXPECT_NEAR(sinh_node.Exec(one, "sinh("), 1.17520119364380145688L, MinNumber);

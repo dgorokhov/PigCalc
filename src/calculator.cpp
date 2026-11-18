@@ -80,7 +80,7 @@ Calculator::Calculator()
 
 void Calculator::ShowHelp()
 {
-    std::cout << "\nConsole *** Kiss the Pig *** Calculator"
+    std::cout << "\n\nConsole *** Kiss the Pig *** Calculator ver. 0.1"
         << "\nSupports arithmetic, trigonometric, logarithmic, some statistic functions.\n";
         
     for (auto& i : nodetypes)
@@ -88,7 +88,7 @@ void Calculator::ShowHelp()
 
     std::cout << "Operands inside function calls must be delimited by ;\n"
         << "You can build complex expressions like this: \n"
-        << "--> ((2.2212+3*10) * max(10; 33+arithmean(12; ln(11); 5*6.23; pow(3;8); 11))) / (13 * 12)\n\n";
+        << "--> ((2.2212+3E+1) * max(10, 33+arithmean(12, ln(11), 5*6.23, pow(3,8), 11))) / (13 * 12)\n\n";
 }
 
 void Calculator::PreProcessInStr(std::string& str) {
@@ -130,9 +130,11 @@ Calculator::SliceNextNode(
 ) const
 {
     auto resultnode = std::make_unique<Node>(); 
+    //auto longestnode = std::make_unique<Node>();  
 
     resultnode->nodestatus = ParseStatus::NoRecognize;  //начальное значение
-
+    //longestnode->nodestatus = ParseStatus::NoRecognize;  //начальное значение
+    //longestnode->endpos =0;
     int pos = -1;  // макс знач длины строки
     int ntidx = 0;  //Nodetypes arrary index
     while (ntidx < nodetypes.size()) {
@@ -148,8 +150,13 @@ Calculator::SliceNextNode(
             //если это не первый нод в строке
             if (prevnode.nodetype) {
                 //и если опознанному node type разрешено следовать за предыдущим то ОК    
-                if (prevnode.nodetype->CanBeFollowedBy(nodetypes[ntidx]->getName()))
+                if (prevnode.nodetype->CanBeFollowedBy(nodetypes[ntidx]->getName())) {
                     resultnode->nodestatus = ParseStatus::OK;
+                    // if (longestnode.get() == nullptr) 
+                    //     longestnode = std::move(resultnode);
+                    // else if (longestnode->endpos < resultnode->endpos)
+                    //     longestnode = std::move(resultnode);
+                }
                 else
                     //если нет то опознан но следовать не может.
                     resultnode->nodestatus = ParseStatus::NoFollow;
@@ -165,7 +172,7 @@ Calculator::SliceNextNode(
             }
             //break;
         }
-        if (resultnode->nodestatus == ParseStatus::OK) break;
+        //if (resultnode->nodestatus == ParseStatus::OK) break;
         ++ntidx;  //к следующему nodetype
     }
     if (resultnode->nodestatus == ParseStatus::NoRecognize)  //если  ==OK то все уже заполнено
@@ -175,11 +182,19 @@ Calculator::SliceNextNode(
         resultnode->strvalue = str.substr(resultnode->startpos, 5);
         resultnode->nodetype = nullptr;
     }
-
-//  std::println(" {} ",resultnode->strvalue);
-//return std::move(resultnode);  gg
+/*
+   if (longestnode->nodestatus == ParseStatus::NoRecognize)  //если  ==OK то все уже заполнено
+    {
+        longestnode->startpos = prevnode.endpos;
+        longestnode->endpos = pos;
+        longestnode->strvalue = str.substr(longestnode->startpos, 5);
+        longestnode->nodetype = nullptr;
+    }
+    //  std::println(" {} ",longestnode->strvalue);
+    
+    return longestnode;  
+*/
     return resultnode;  
-
 
 
 }
@@ -330,10 +345,10 @@ void Calculator::ToReversePolishNotation(std::string& str)
         }
         TopStackToVec();
     }
-std::println("polishnotation");
-for (const auto& i : vec) {
-    std::print("| {} ", i->strvalue);
-}
+// std::println("polishnotation");
+// for (const auto& i : vec) {
+//     std::print("| {} ", i->strvalue);
+// }
 
 }
 
@@ -349,11 +364,11 @@ OperandType Calculator::Execute()
     ///рабочая переменная не  владеет 
     NodeType* nodetype = vec[v]->nodetype;
 
-    std::print("rpn : ");    
-    for (const auto& i : vec) {
-        std::print(" {} | ", i->strvalue);
-    }
-    std::println();
+    // std::print("rpn : ");    
+    // for (const auto& i : vec) {
+    //     std::print(" {} | ", i->strvalue);
+    // }
+    // std::println();
 
     while (v < vec.size())
     {
@@ -361,7 +376,7 @@ OperandType Calculator::Execute()
             result = nodetype->Exec(operands, str);
             FinalizeResult(result);
             stack.push(result);
-            std::println("to stack: {}", result);
+            //std::println("to stack: {}", result);
         };
         nodetype = vec[v]->nodetype;
         operands.clear();
