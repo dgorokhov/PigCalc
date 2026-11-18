@@ -130,11 +130,12 @@ Calculator::SliceNextNode(
 ) const
 {
     auto resultnode = std::make_unique<Node>(); 
-    //auto longestnode = std::make_unique<Node>();  
+    auto longestnode = std::make_unique<Node>();  
 
     resultnode->nodestatus = ParseStatus::NoRecognize;  //начальное значение
-    //longestnode->nodestatus = ParseStatus::NoRecognize;  //начальное значение
-    //longestnode->endpos =0;
+    longestnode->nodestatus = ParseStatus::NoRecognize;  //начальное значение
+    longestnode->endpos =0;
+
     int pos = -1;  // макс знач длины строки
     int ntidx = 0;  //Nodetypes arrary index
     while (ntidx < nodetypes.size()) {
@@ -143,6 +144,7 @@ Calculator::SliceNextNode(
         if (pos != -1) {
             //узeл  опознан //node type is recognized
             // теперь надо понять может ли он занмать эо место в строке
+            if (!resultnode) resultnode = std::make_unique<Node>();
             resultnode->startpos = prevnode.endpos;
             resultnode->endpos = pos;
             resultnode->strvalue = str.substr(resultnode->startpos, pos - resultnode->startpos);
@@ -152,10 +154,8 @@ Calculator::SliceNextNode(
                 //и если опознанному node type разрешено следовать за предыдущим то ОК    
                 if (prevnode.nodetype->CanBeFollowedBy(nodetypes[ntidx]->getName())) {
                     resultnode->nodestatus = ParseStatus::OK;
-                    // if (longestnode.get() == nullptr) 
-                    //     longestnode = std::move(resultnode);
-                    // else if (longestnode->endpos < resultnode->endpos)
-                    //     longestnode = std::move(resultnode);
+                    if (longestnode->endpos < resultnode->endpos)
+                         longestnode = std::move(resultnode);
                 }
                 else
                     //если нет то опознан но следовать не может.
@@ -163,18 +163,24 @@ Calculator::SliceNextNode(
             }
             else {
                 //если prevnode.nodetype==nullptr то это первый нод в строке 
-                if (nodetypes[ntidx]->CanStartExpr())
+                if (nodetypes[ntidx]->CanStartExpr()) {
                     //... и может начинать строку
                     resultnode->nodestatus = ParseStatus::OK;
+                    if (longestnode->endpos < resultnode->endpos)
+                         longestnode = std::move(resultnode);
+                }
                 else
                     //если нет то все
                     resultnode->nodestatus = ParseStatus::NoStartWith;
             }
             //break;
         }
-        //if (resultnode->nodestatus == ParseStatus::OK) break;
+        //
+        //if (resultnode->nodestatus == ParseStatus::OK) break; //закоменировано: цикл 
+        // не прекращ-ся после первоо найденыша
         ++ntidx;  //к следующему nodetype
     }
+    /*
     if (resultnode->nodestatus == ParseStatus::NoRecognize)  //если  ==OK то все уже заполнено
     {
         resultnode->startpos = prevnode.endpos;
@@ -182,7 +188,8 @@ Calculator::SliceNextNode(
         resultnode->strvalue = str.substr(resultnode->startpos, 5);
         resultnode->nodetype = nullptr;
     }
-/*
+        return resultnode;  
+        */
    if (longestnode->nodestatus == ParseStatus::NoRecognize)  //если  ==OK то все уже заполнено
     {
         longestnode->startpos = prevnode.endpos;
@@ -193,8 +200,6 @@ Calculator::SliceNextNode(
     //  std::println(" {} ",longestnode->strvalue);
     
     return longestnode;  
-*/
-    return resultnode;  
 
 
 }
